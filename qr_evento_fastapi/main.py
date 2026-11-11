@@ -13,7 +13,7 @@ from fastapi import FastAPI, File, Header, HTTPException, UploadFile, Background
 from fastapi.responses import FileResponse, StreamingResponse, Response
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Text, UniqueConstraint, select, func, update, insert, and_, inspect, text
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Text, UniqueConstraint, select, func, update, insert, delete, and_, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 ROOT = Path(__file__).resolve().parent
@@ -225,7 +225,7 @@ async def importer(archivo:UploadFile=File(...), x_admin_key:str|None=Header(Non
             except csv.Error: dialect=csv.excel
             reader=csv.DictReader(io.StringIO(body),dialect=dialect)
             records=({norm(k):str(v or '').strip() for k,v in r.items() if k is not None} for r in reader)
-        added=existing=invalid=0; errors=[]
+        added=existing=updated=protected=invalid=0; errors=[]
         with engine.begin() as conn:
             for idx,row in enumerate(records,start=2):
                 doc=getfield(row,'identificacion','cedula','documento','numero de identificacion','numero de documento')
@@ -239,14 +239,65 @@ async def importer(archivo:UploadFile=File(...), x_admin_key:str|None=Header(Non
                     invalid+=1
                     if len(errors)<20:errors.append(idx)
                     continue
-                if conn.execute(select(people.c.id).where(and_(people.c.evento_id==EVENT_ID,people.c.cedula==doc))).first():
-                    existing+=1;continue
+                old=conn.execute(select(people.c.id,people.c.nombre,people.c.email,people.c.telefono,people.c.tipo,
+                    people.c.asistio_en,people.c.email_estado,people.c.email_intentos).where(and_(
+                    people.c.evento_id==EVENT_ID,people.c.cedula==doc))).first()
+                if old:
+                    # No se cambia el destinatario de un QR ya enviado ni una asistencia existente.
+                    if old.asistio_en or old.email_estado!='pendiente' or old.email_intentos:
+                        protected+=1
+                        continue
+                    changes={}
+                    for field,value in [('nombre',name),('email',email),('telefono',phone),('tipo',typ)]:
+                        # Las celdas vacías del Excel no borran datos existentes por accidente.
+                        if value and value != getattr(old,field): changes[field]=value
+                    if changes:
+                        conn.execute(update(people).where(people.c.id==old.id).values(**changes))
+                        updated+=1
+                    else:
+                        existing+=1
+                    continue
                 token=secrets.token_urlsafe(32)
                 conn.execute(insert(people).values(evento_id=EVENT_ID,cedula=doc,nombre=name,email=email,
                     telefono=phone,tipo=typ,token_hash=hashlib.sha256(token.encode()).hexdigest(),token=token,registrado_en=now()))
                 added+=1
-        return {'mensaje':'Archivo procesado correctamente','nuevos':added,'existentes':existing,'invalidos':invalid,'filas_invalidas':errors}
+        return {'mensaje':'Archivo procesado correctamente','nuevos':added,'existentes':existing,'actualizados':updated,'protegidos':protected,'invalidos':invalid,'filas_invalidas':errors}
     except (ValueError,StopIteration) as e: raise HTTPException(400,'No se pudo leer el archivo: '+str(e)) from e
+
+
+@app.delete('/api/participantes/{pid}')
+def remove_person(pid:int, x_admin_key:str|None=Header(None)):
+    guard(x_admin_key)
+    with engine.begin() as conn:
+        p=conn.execute(select(people.c.id,people.c.nombre,people.c.cedula,people.c.asistio_en,
+              people.c.email_estado,people.c.email_intentos).where(and_(people.c.id==pid,
+              people.c.evento_id==EVENT_ID)).with_for_update()).first()
+        if p is None:raise HTTPException(404,'Participante no encontrado')
+        if p.asistio_en or p.email_estado!='pendiente' or p.email_intentos:
+            raise HTTPException(409,'No se puede eliminar: ya tiene ingreso o historial de envío. Contacta al administrador para una corrección auditada.')
+        conn.execute(delete(people).where(and_(people.c.id==pid,people.c.evento_id==EVENT_ID)))
+    return {'eliminado':True,'nombre':p.nombre,'cedula':p.cedula}
+
+class DeleteTests(BaseModel):
+    confirmacion:str=Field(min_length=1)
+
+@app.post('/api/eliminar-ejemplos')
+def remove_tests(body:DeleteTests,x_admin_key:str|None=Header(None)):
+    guard(x_admin_key)
+    if body.confirmacion != 'ELIMINAR EJEMPLOS':
+        raise HTTPException(400,'Debes confirmar exactamente ELIMINAR EJEMPLOS')
+    removed=[]
+    with engine.begin() as conn:
+        rows=conn.execute(select(people.c.id,people.c.cedula,people.c.email,
+            people.c.asistio_en,people.c.email_estado,people.c.email_intentos).where(
+            people.c.evento_id==EVENT_ID).with_for_update()).all()
+        for p in rows:
+            # Solo registros identificados explícitamente con TEST, sin ingresos ni envíos.
+            if not p.cedula.upper().startswith('TEST'):continue
+            if p.asistio_en or p.email_estado!='pendiente' or p.email_intentos:continue
+            conn.execute(delete(people).where(and_(people.c.id==p.id,people.c.evento_id==EVENT_ID)))
+            removed.append(p.cedula)
+    return {'eliminados':len(removed),'documentos':removed}
 
 @app.get('/api/participantes')
 def list_people(x_admin_key:str|None=Header(None)):

@@ -88,3 +88,11 @@ py -m uvicorn main:app --reload
 ```
 
 Sin `DATABASE_URL` usa SQLite local. Para producción, la base de datos debe estar configurada antes de la primera importación.
+
+
+## V5: Corrección de datos y eliminación segura de pruebas
+- Al importar Excel/CSV, las identificaciones nuevas se agregan; las existentes se actualizan solo si no tienen historial de envío ni asistencia. No se eliminan registros ausentes del archivo.
+- Botón **Eliminar** para participantes sin envíos ni asistencia. Protegido por `QR_ADMIN_KEY`.
+- Botón **Borrar registros TEST**: elimina exclusivamente documentos cuyo valor comienza por `TEST` que no tengan envíos ni asistencias. Requiere confirmación explícita.
+- El campo `protegidos` informa los registros que necesitan corrección manual auditada.
+- No ejecuta borrados masivos por mera importación de Excel. Respaldar PostgreSQL antes de eliminar datos.
