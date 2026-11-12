@@ -5,12 +5,12 @@ import base64, csv, hashlib, io, os, re, secrets, unicodedata, json, html
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import qrcode
 import httpx
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile, BackgroundTasks, Request
-from fastapi.responses import FileResponse, StreamingResponse, Response
+from fastapi.responses import FileResponse, StreamingResponse, Response, HTMLResponse
 from openpyxl import load_workbook
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Text, UniqueConstraint, select, func, update, insert, delete, and_, inspect, text
@@ -445,3 +445,191 @@ def lookup_person(body:Lookup,x_admin_key:str|None=Header(None)):
             and_(people.c.evento_id==EVENT_ID,people.c.cedula==body.cedula))).first()
     if not p:raise HTTPException(404,'No consta en el listado importado')
     return asrow(p)
+
+
+# ============================================================
+# REGISTRO RÁPIDO: formulario público complementario del evento
+# ============================================================
+
+class RegistroRapido(BaseModel):
+    nombres: str = Field(min_length=2, max_length=100)
+    apellidos: str = Field(min_length=2, max_length=100)
+    cedula: str = Field(min_length=5, max_length=50)
+    correo: str = Field(min_length=6, max_length=255)
+    consentimiento: bool
+    captcha: str = Field(min_length=1, max_length=2048)
+    sitio_web: str = Field(default="", max_length=200)
+
+
+def registro_habilitado():
+    return os.getenv("REGISTRO_PUBLICO_ACTIVO", "false").lower() == "true"
+
+
+def url_publica():
+    return os.getenv(
+        "PUBLIC_BASE_URL",
+        "https://evento-ups-qr.onrender.com"
+    ).rstrip("/")
+
+
+@app.get("/registro", response_class=HTMLResponse)
+def pagina_registro():
+    if not registro_habilitado():
+        raise HTTPException(503, "Registro rápido cerrado o no activado.")
+
+    site_key = os.getenv("TURNSTILE_SITE_KEY", "")
+    if not site_key:
+        raise HTTPException(503, "Falta TURNSTILE_SITE_KEY en Render.")
+
+    ruta = ROOT / "static" / "registro.html"
+    pagina = ruta.read_text(encoding="utf-8")
+    pagina = pagina.replace(
+        "__TURNSTILE_SITE_KEY__",
+        html.escape(site_key, quote=True)
+    )
+    return HTMLResponse(
+        content=pagina,
+        headers={"Cache-Control": "no-store"}
+    )
+
+
+@app.get("/registro/qr")
+def descargar_qr_registro():
+    if not registro_habilitado():
+        raise HTTPException(503, "Registro rápido cerrado.")
+
+    enlace = f"{url_publica()}/registro"
+    imagen = qrcode.make(enlace)
+    salida = io.BytesIO()
+    imagen.save(salida, format="PNG")
+    salida.seek(0)
+
+    return StreamingResponse(
+        salida,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'inline; filename="qr_registro_ups.png"'
+        }
+    )
+
+
+async def verificar_turnstile(token: str):
+    secreto = os.getenv("TURNSTILE_SECRET_KEY", "")
+    if not secreto:
+        raise HTTPException(503, "Falta configurar TURNSTILE_SECRET_KEY.")
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as cliente:
+            respuesta = await cliente.post(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                data={
+                    "secret": secreto,
+                    "response": token
+                }
+            )
+            respuesta.raise_for_status()
+            resultado = respuesta.json()
+    except (httpx.HTTPError, ValueError):
+        raise HTTPException(503, "No se pudo verificar el CAPTCHA.")
+
+    dominio = urlparse(url_publica()).hostname
+    if (
+        not resultado.get("success")
+        or resultado.get("hostname") != dominio
+    ):
+        raise HTTPException(400, "Verificación de seguridad inválida.")
+
+
+@app.post("/api/registro-rapido", status_code=201)
+async def nuevo_registro(
+    datos: RegistroRapido,
+    background_tasks: BackgroundTasks
+):
+    if not registro_habilitado():
+        raise HTTPException(403, "Registro cerrado.")
+
+    if datos.sitio_web:
+        raise HTTPException(400, "Solicitud inválida.")
+
+    if not datos.consentimiento:
+        raise HTTPException(400, "Debes aceptar el aviso de privacidad.")
+
+    nombres = " ".join(datos.nombres.split())
+    apellidos = " ".join(datos.apellidos.split())
+    cedula = datos.cedula.strip().upper()
+    correo = datos.correo.strip().lower()
+
+    if len(nombres) < 2 or len(apellidos) < 2:
+        raise HTTPException(400, "Nombres y apellidos incompletos.")
+
+    if not re.fullmatch(r"[A-Z0-9-]{5,50}", cedula):
+        raise HTTPException(400, "Identificación inválida.")
+
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", correo):
+        raise HTTPException(400, "Correo inválido.")
+
+    await verificar_turnstile(datos.captcha)
+
+    if not mail_configured():
+        raise HTTPException(503, "El envío de QR no está configurado.")
+
+    maximo = int(os.getenv("MAX_PARTICIPANTES_EVENTO", "2000"))
+    token = secrets.token_urlsafe(32)
+
+    try:
+        with engine.begin() as conn:
+            total = conn.execute(
+                select(func.count())
+                .select_from(people)
+                .where(people.c.evento_id == EVENT_ID)
+            ).scalar_one()
+
+            if total >= maximo:
+                raise HTTPException(409, "Cupos agotados.")
+
+            registro = conn.execute(
+                insert(people).values(
+                    evento_id=EVENT_ID,
+                    cedula=cedula,
+                    nombre=f"{nombres} {apellidos}",
+                    email=correo,
+                    telefono="",
+                    tipo="Registro rápido",
+                    token_hash=hashlib.sha256(
+                        token.encode()
+                    ).hexdigest(),
+                    token=token,
+                    registrado_en=now(),
+                    email_estado="pendiente",
+                    email_intentos=0
+                )
+            )
+            participante_id = registro.inserted_primary_key[0]
+
+    except IntegrityError:
+        # No revela datos personales de la inscripción existente.
+        raise HTTPException(
+            409,
+            "Esta identificación ya está inscrita. "
+            "Solicita ayuda a la organización si necesitas tu QR."
+        )
+
+    # Se registra primero en PostgreSQL. Después se reserva un
+    # intento de correo, reutilizando el sistema Brevo existente.
+    puede_enviar, motivo = claim_mail(participante_id)
+    if puede_enviar:
+        background_tasks.add_task(send_brevo, participante_id)
+
+    return {
+        "registrado": True,
+        "correo_programado": puede_enviar,
+        "mensaje": (
+            "Inscripción guardada. El envío del QR está en proceso; "
+            "revisa tu correo y spam."
+            if puede_enviar
+            else
+            "Inscripción guardada. La credencial está pendiente de envío; "
+            "contacta con la organización si no la recibes."
+        )
+    }
