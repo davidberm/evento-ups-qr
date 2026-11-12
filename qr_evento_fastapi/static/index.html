@@ -1,21 +1,1277 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gestión de Asistencia | Evento UPS</title><style>
-:root{font-family:Inter,system-ui,Arial;color:#152643;background:#f2f5fa}*{box-sizing:border-box}body{margin:0}header{background:#10264b;color:#fff;padding:22px max(20px,calc((100% - 1100px)/2))}header small{color:#bacee9;letter-spacing:.08em}h1{margin:6px 0;font-size:clamp(24px,3.5vw,35px)}.wrap{max-width:1100px;margin:auto;padding:25px 18px}p{line-height:1.55}.muted{color:#63738e}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{background:white;border:1px solid #e1e8f2;border-radius:18px;padding:23px;box-shadow:0 5px 18px #20365a0a}h2{margin:0 0 10px;font-size:19px}a{color:#245cd9}.btn,button{border:0;background:#245cd9;color:white;padding:12px 16px;border-radius:10px;cursor:pointer;font-size:15px;font-weight:650}.btn{display:inline-block;text-decoration:none}.secondary{background:#eaf0fb;color:#1c4078}.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}input{padding:12px;border:1px solid #b7c5d8;border-radius:10px;font-size:15px;width:100%}label{display:block;font-weight:600;font-size:14px;margin:14px 0 6px}.stat{font-size:30px;font-weight:800}.tablebox{overflow:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:12px;border-bottom:1px solid #e6eaf2}th{background:#f3f6fb}button:disabled{opacity:.5;cursor:not-allowed}.note{border-left:4px solid #e4a935;background:#fffaec;padding:12px;border-radius:7px}.result{margin-top:12px;white-space:pre-line;overflow-wrap:anywhere;color:#26436c}footer{padding:20px;text-align:center;color:#8390a4;font-size:12px}
-</style></head><body><header><small>CONTROL DE ACCESO · EVENTO 2207</small><h1>Gestión de asistencia QR</h1><div>Conferencia: Software Libre, Libertad Digital y su Relación con el Machine Learning</div></header><main class="wrap"><div class="grid"><section class="card"><h2>Participantes</h2><p class="muted">La inscripción se realiza exclusivamente en el portal oficial de la universidad.</p><a class="btn" href="https://appwfp.ups.edu.ec/foc-webins/index.xhtml?prog=2207" target="_blank" rel="noopener">Ir a inscripción oficial ↗</a><p class="note">Este sistema no tiene acceso automático a los registros de la UPS. El organizador debe importar una lista autorizada.</p></section><section class="card"><h2>Control de entrada</h2><p class="muted">Abre el lector, pulsa «Validar QR» y utiliza la cámara del dispositivo para registrar el ingreso.</p><a class="btn" href="/escanear">Validar QR →</a></section></div>
-<section class="card" style="margin-top:16px"><h2>Panel del organizador</h2><p class="muted">Importa el listado oficial Excel/CSV, genera QR individuales y envíalos con Brevo por API HTTPS. Usa una clave privada configurada por el responsable.</p><label for="clave">Clave de administrador</label><input type="password" id="clave" placeholder="Clave QR_ADMIN_KEY" autocomplete="off"><div class="row" style="margin-top:12px"><button id="cargar">Ver participantes y estadísticas</button></div><div id="resumen" class="result" aria-live="polite"></div><div class="grid" style="margin-top:17px"><div><label for="archivo">Importar inscritos (Excel o CSV)</label><input id="archivo" type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"><p class="muted" style="font-size:13px">Columnas sugeridas: Identificación, Nombres, Apellidos, Correo Personal, Celular, Tipo Inscripción. Si una identificación ya existe, se actualizan los datos no vacíos únicamente cuando no se ha enviado su QR ni registrado su asistencia. La importación no borra a los ausentes del Excel.</p><button id="importar">Subir y procesar archivo</button><button id="borrarEjemplos" class="secondary" style="margin-left:8px">Borrar registros TEST (sin envíos)</button></div><div><label for="buscar">Consultar por cédula / documento</label><input id="buscar" placeholder="Número de identificación"><button id="consultar" class="secondary" style="margin-top:10px">Buscar participante</button><div id="consulta" class="result" aria-live="polite"></div></div></div><div class="row" style="margin-top:22px"><button id="envioMasivo" class="secondary">Programar hasta 20 QR pendientes</button><button id="exportar" class="secondary">Exportar asistencia CSV</button><button id="verEnvios" class="secondary">Ver historial de envíos</button></div><p class="muted" style="font-size:13px">Los envíos requieren BREVO_API_KEY y un remitente verificado en Brevo. «Aceptado» no garantiza entrega; «Entregado» requiere webhook. Los estados inciertos se revisan manualmente para evitar duplicados.</p><div id="historial" class="result" role="status"></div></section>
-<section class="card" style="margin-top:16px"><h2>Participantes importados</h2><p class="muted">Descarga el QR individual o envíalo al correo del participante. Solo usa datos autorizados por la UPS.</p><div class="tablebox"><table><thead><tr><th>Participante</th><th>Identificación</th><th>Asistencia</th><th>Correo</th><th>Credencial y envío</th></tr></thead><tbody id="tabla"><tr><td colspan="5">Introduce la clave y pulsa «Ver participantes».</td></tr></tbody></table></div></section></main><footer>Prototipo independiente · No es un servicio oficial ni conectado a la base de datos de la UPS</footer><script>
-const $=id=>document.getElementById(id), cab=()=>({'X-Admin-Key':$('clave').value});
-function err(d){return typeof d.detail==='string'?d.detail:'No se pudo completar la operación'}
-async function cargar(){try{let r=await fetch('/api/participantes',{headers:cab()}),d=await r.json();if(!r.ok)throw Error(err(d));$('resumen').textContent=`Inscritos: ${d.total} · Asistieron: ${d.asistieron} · Pendientes: ${d.pendientes}\nCorreos: ${Object.entries(d.envios||{}).map(([k,v])=>k+': '+v).join(' · ')}\nBrevo: ${d.brevo_configurado?'Configurado':'Sin configurar'} · Límite diario: ${d.limite_diario}`;let tbody=$('tabla');tbody.replaceChildren();for(const p of d.participantes){let tr=document.createElement('tr');for(const dato of [p.nombre,p.cedula,p.asistio_en?'Ingresó':'Pendiente',(p.email||'Sin correo')+' · '+(p.email_estado||'pendiente')]){let td=document.createElement('td');td.textContent=dato;tr.append(td)}let td=document.createElement('td'),btn=document.createElement('button');btn.className='secondary';btn.textContent='Descargar QR';btn.onclick=()=>descargar(p.id);td.append(btn);let send=document.createElement('button');send.className='secondary';send.textContent='Enviar QR';send.style.margin='5px';send.disabled=!p.email;send.onclick=()=>enviarCorreo(p.id);td.append(send);if(['error','rebotado'].includes(p.email_estado)){let rt=document.createElement('button');rt.className='secondary';rt.textContent='Reintentar';rt.onclick=()=>reintentar(p.id);td.append(rt)}let wa=document.createElement('button');wa.className='secondary';wa.textContent='WhatsApp';wa.disabled=!p.telefono;wa.onclick=()=>abrirWhatsapp(p.id);td.append(wa);if(!p.asistio_en && p.email_estado==='pendiente' && !p.email_intentos){let del=document.createElement('button');del.textContent='Eliminar';del.className='secondary';del.style.margin='5px';del.onclick=()=>eliminarPersona(p.id,p.nombre,p.cedula);td.append(del)}tr.append(td);tbody.append(tr)}if(!d.participantes.length)tbody.innerHTML='<tr><td colspan="5">No se han importado inscritos.</td></tr>'}catch(e){$('resumen').textContent=e.message}}
-async function descargar(id){try{const r=await fetch('/api/qr/'+id,{headers:cab()});if(!r.ok)throw Error(err(await r.json()));let url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download=`credencial_${id}.png`;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000)}catch(e){alert(e.message)}}
-async function enviarCorreo(id){if(!confirm('¿Enviar la credencial QR por correo al participante?'))return;try{let r=await fetch('/api/enviar-correo/'+id,{method:'POST',headers:cab()}),d=await r.json();if(!r.ok)throw Error(err(d));alert(d.mensaje);await cargar()}catch(e){alert(e.message)}}
-async function abrirWhatsapp(id){try{let r=await fetch('/api/whatsapp/'+id,{headers:cab()}),d=await r.json();if(!r.ok)throw Error(err(d));window.open(d.url,'_blank','noopener,noreferrer')}catch(e){alert(e.message)}}
-$('envioMasivo').onclick=async()=>{if(!confirm('Programar el envío a hasta 20 inscritos pendientes? El envío real se procesará después.'))return;try{let r=await fetch('/api/enviar-pendientes',{method:'POST',headers:{...cab(),'Content-Type':'application/json'},body:JSON.stringify({limite:20})}),d=await r.json();if(!r.ok)throw Error(err(d));alert(`Programados: ${d.programados}. Actualiza el panel para verificar los resultados.`);await cargar()}catch(e){alert(e.message)}};
-$('exportar').onclick=async()=>{try{let r=await fetch('/api/exportar-asistencia',{headers:cab()});if(!r.ok)throw Error(err(await r.json()));let url=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=url;a.download='asistencia_ups.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000)}catch(e){alert(e.message)}};
-$('cargar').onclick=cargar;
-$('importar').onclick=async()=>{const f=$('archivo').files[0];if(!f)return alert('Selecciona un Excel o CSV');let fd=new FormData();fd.append('archivo',f);try{let r=await fetch('/api/importar',{method:'POST',headers:cab(),body:fd}),d=await r.json();if(!r.ok)throw Error(err(d));alert(`Importación finalizada. Nuevos: ${d.nuevos}. Actualizados: ${d.actualizados}. Sin cambios: ${d.existentes}. Protegidos por envío/asistencia: ${d.protegidos}. Filas inválidas: ${d.invalidos}.`);await cargar()}catch(e){alert(e.message)}};
-async function eliminarPersona(id,nombre,cedula){if(!confirm(`¿Eliminar de forma permanente a ${nombre} (${cedula})? Solo se permite si no tiene envíos ni asistencias.`))return;try{let r=await fetch('/api/participantes/'+id,{method:'DELETE',headers:cab()}),d=await r.json();if(!r.ok)throw Error(err(d));alert('Participante eliminado.');await cargar()}catch(e){alert(e.message)}}
-$('borrarEjemplos').onclick=async()=>{if(!confirm('Esto eliminará registros cuya identificación comience por TEST, siempre que no tengan envíos ni asistencia. ¿Continuar?'))return;let code=prompt('Escribe ELIMINAR EJEMPLOS para confirmar');if(code!=='ELIMINAR EJEMPLOS')return;try{let r=await fetch('/api/eliminar-ejemplos',{method:'POST',headers:{...cab(),'Content-Type':'application/json'},body:JSON.stringify({confirmacion:code})}),d=await r.json();if(!r.ok)throw Error(err(d));alert(`Eliminados ${d.eliminados} registros de prueba.`);await cargar()}catch(e){alert(e.message)}};
-async function reintentar(id){if(!confirm('Reintentar este envío fallido?'))return;try{let r=await fetch('/api/reintentar-correo/'+id,{method:'POST',headers:cab()}),d=await r.json();if(!r.ok)throw Error(err(d));alert(d.mensaje);await cargar()}catch(e){alert(e.message)}}
-$('verEnvios').onclick=async()=>{try{let r=await fetch('/api/envios',{headers:cab()}),d=await r.json();if(!r.ok)throw Error(err(d));$('historial').textContent=(d.envios||[]).slice(0,30).map(e=>`${e.fecha_utc} · ${e.destinatario} · ${e.estado}${e.detalle?' · '+e.detalle:''}`).join('\n')||'Sin intentos todavía.'}catch(e){$('historial').textContent=e.message}};
-$('consultar').onclick=async()=>{try{let r=await fetch('/api/consultar',{method:'POST',headers:{...cab(),'Content-Type':'application/json'},body:JSON.stringify({cedula:$('buscar').value.trim()})}),d=await r.json();if(!r.ok)throw Error(err(d));$('consulta').textContent=`${d.nombre}\nDocumento: ${d.cedula}\nEstado: ${d.asistio_en?'Asistencia confirmada':'Inscrito, aún no ha ingresado'}`}catch(e){$('consulta').textContent=e.message}};
-</script></body></html>
+
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Sistema de Eventos UPS</title>
+
+    <style>
+        :root {
+            --azul: #12345a;
+            --azul-claro: #2563eb;
+            --fondo: #f2f5fa;
+            --blanco: #ffffff;
+            --texto: #172b4d;
+            --gris: #66758c;
+            --borde: #dce5f0;
+            --verde: #15803d;
+            --rojo: #b91c1c;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--fondo);
+            font-family: Arial, Helvetica, sans-serif;
+            color: var(--texto);
+        }
+
+        header {
+            background: linear-gradient(
+                135deg,
+                #102a50,
+                #2356a2
+            );
+
+            padding: 35px 20px;
+            text-align: center;
+            color: white;
+        }
+
+        header h1 {
+            font-size: 28px;
+            margin-bottom: 12px;
+        }
+
+        header p {
+            max-width: 650px;
+            margin: auto;
+            line-height: 1.7;
+        }
+
+        .contenedor {
+            width: 100%;
+            max-width: 750px;
+            margin: 30px auto;
+            padding: 0 16px;
+        }
+
+        .tarjeta {
+            background: white;
+            border: 1px solid var(--borde);
+            border-radius: 18px;
+            padding: 26px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 20px #1730500a;
+        }
+
+        .tarjeta h2 {
+            margin-top: 0;
+            font-size: 22px;
+        }
+
+        .descripcion {
+            color: var(--gris);
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .icono {
+            font-size: 34px;
+            margin-bottom: 12px;
+        }
+
+        .boton,
+        button {
+            display: block;
+            width: 100%;
+            border: none;
+            padding: 15px;
+            border-radius: 11px;
+            margin-top: 13px;
+            text-align: center;
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            background: var(--azul-claro);
+            color: white;
+        }
+
+        .boton-secundario {
+            background: #e9f0fc;
+            color: #194278;
+        }
+
+        .boton-peligro {
+            background: #fff1f1;
+            color: var(--rojo);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 18px;
+            margin-bottom: 8px;
+        }
+
+        input {
+            display: block;
+            width: 100%;
+            padding: 14px;
+            border: 1px solid #bdc9da;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+
+        input:focus {
+            outline: 2px solid #95b7fa;
+            border-color: var(--azul-claro);
+        }
+
+        .resultado {
+            background: #f1f5fc;
+            padding: 16px;
+            border-radius: 12px;
+            margin-top: 17px;
+            white-space: pre-line;
+            overflow-wrap: anywhere;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+
+        .qr-publico {
+            text-align: center;
+            padding: 20px;
+            background: #f6f9ff;
+            border-radius: 15px;
+            margin-top: 16px;
+        }
+
+        .qr-publico img {
+            display: block;
+            width: 220px;
+            max-width: 100%;
+            margin: 15px auto;
+            padding: 12px;
+            background: white;
+            border-radius: 12px;
+        }
+
+        .estadisticas {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 18px;
+        }
+
+        .bloque {
+            background: #f6f9ff;
+            padding: 16px;
+            border: 1px solid var(--borde);
+            border-radius: 12px;
+        }
+
+        .participante {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 20px;
+            border: 1px solid var(--borde);
+            border-radius: 15px;
+            margin-top: 15px;
+            background: #fafcff;
+        }
+
+        .participante h3 {
+            margin: 0;
+            overflow-wrap: anywhere;
+        }
+
+        .participante p {
+            font-size: 14px;
+            margin: 2px 0;
+            overflow-wrap: anywhere;
+        }
+
+        .estado {
+            display: inline-block;
+            padding: 7px 12px;
+            border-radius: 20px;
+            background: #eef2ff;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .ingreso {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .pendiente {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .acciones {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .acciones button {
+            margin-top: 0;
+        }
+
+        .separador {
+            border: none;
+            border-top: 1px solid var(--borde);
+            margin: 25px 0;
+        }
+
+        .aviso {
+            background: #fff8e5;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #e5a328;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        footer {
+            padding: 25px 15px;
+            text-align: center;
+            color: #7b899c;
+            font-size: 12px;
+        }
+
+        @media (max-width: 600px) {
+            .contenedor {
+                margin-top: 18px;
+            }
+
+            .tarjeta {
+                padding: 19px;
+            }
+
+            header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ENCABEZADO -->
+
+    <header>
+        <div class="icono">🎓</div>
+
+        <h1>Sistema de Eventos UPS</h1>
+
+        <p>
+            Conferencia: Software Libre,
+            Libertad Digital y su Relación
+            con el Machine Learning
+        </p>
+
+        <p>
+            23 de noviembre de 2026
+            <br>
+            10:00 - 13:00
+            <br>
+            Guayaquil - Centenario
+        </p>
+    </header>
+
+    <main class="contenedor">
+
+        <!-- INSCRIPCION OFICIAL -->
+
+        <section class="tarjeta">
+
+            <div class="icono">📝</div>
+
+            <h2>Inscripción oficial</h2>
+
+            <p class="descripcion">
+                Accede al formulario institucional
+                de la Universidad Politécnica Salesiana.
+            </p>
+
+            <a
+                class="boton"
+                href="https://appwfp.ups.edu.ec/foc-webins/index.xhtml?prog=2207"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                Abrir inscripción UPS
+            </a>
+
+            <p class="aviso">
+                Los inscritos mediante el portal oficial
+                deben importarse al sistema mediante Excel
+                o CSV autorizado.
+            </p>
+
+        </section>
+
+        <!-- REGISTRO RAPIDO -->
+
+        <section class="tarjeta">
+
+            <div class="icono">👤</div>
+
+            <h2>Registro rápido de participantes</h2>
+
+            <p class="descripcion">
+                Este apartado permite registrar
+                participantes nuevos que todavía
+                no tengan una credencial de ingreso.
+            </p>
+
+            <p class="descripcion">
+                Solamente se solicitarán:
+                nombres, apellidos, identificación
+                y correo electrónico.
+            </p>
+
+            <a
+                class="boton"
+                href="/registro"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                Abrir formulario de registro
+            </a>
+
+        </section>
+
+        <!-- QR PUBLICO -->
+
+        <section class="tarjeta">
+
+            <div class="icono">📱</div>
+
+            <h2>QR público de inscripción</h2>
+
+            <p class="descripcion">
+                Los participantes pueden escanear
+                este código con la cámara de su celular.
+                Serán enviados al formulario
+                de registro rápido.
+            </p>
+
+            <div class="qr-publico">
+
+                <h3>Escanea para registrarte</h3>
+
+                <img
+                    src="/registro/qr"
+                    alt="Código QR público para registro"
+                    id="qrRegistro"
+                >
+
+                <p class="descripcion">
+                    Registro de nuevos participantes
+                </p>
+
+            </div>
+
+            <a
+                class="boton boton-secundario"
+                href="/registro/qr"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                Ver y guardar QR público
+            </a>
+
+        </section>
+
+        <!-- VALIDADOR QR -->
+
+        <section class="tarjeta">
+
+            <div class="icono">📷</div>
+
+            <h2>Control de asistencia</h2>
+
+            <p class="descripcion">
+                El organizador podrá activar
+                la cámara y escanear los códigos
+                QR de los participantes.
+            </p>
+
+            <p class="descripcion">
+                El sistema mostrará si la entrada
+                es válida o si la persona
+                ya ingresó anteriormente.
+            </p>
+
+            <a
+                class="boton"
+                href="/escanear"
+            >
+                Validar código QR
+            </a>
+
+        </section>
+
+        <!-- ADMINISTRACION -->
+
+        <section class="tarjeta">
+
+            <div class="icono">🔐</div>
+
+            <h2>Panel del organizador</h2>
+
+            <p class="descripcion">
+                Acceso administrativo para gestionar
+                inscripciones, credenciales QR
+                y asistencias.
+            </p>
+
+            <label for="clave">
+                Clave de administrador
+            </label>
+
+            <input
+                type="password"
+                id="clave"
+                placeholder="Introduce tu clave"
+                autocomplete="off"
+            >
+
+            <button id="cargar">
+                Ver participantes y estadísticas
+            </button>
+
+            <div
+                id="resumen"
+                class="resultado"
+                aria-live="polite"
+            >
+                Introduce tu clave para consultar
+                las estadísticas.
+            </div>
+
+            <hr class="separador">
+
+            <!-- IMPORTACION -->
+
+            <h2>Importar participantes</h2>
+
+            <p class="descripcion">
+                Sube el archivo Excel o CSV
+                proporcionado por la organización.
+            </p>
+
+            <label for="archivo">
+                Seleccionar archivo
+            </label>
+
+            <input
+                type="file"
+                id="archivo"
+                accept=".xlsx,.csv"
+            >
+
+            <button id="importar">
+                Subir y procesar archivo
+            </button>
+
+            <button
+                id="borrarEjemplos"
+                class="boton-peligro"
+            >
+                Borrar registros de prueba
+            </button>
+
+            <hr class="separador">
+
+            <!-- CONSULTAR PERSONA -->
+
+            <h2>Consultar participante</h2>
+
+            <label for="buscar">
+                Cédula o identificación
+            </label>
+
+            <input
+                type="text"
+                id="buscar"
+                placeholder="Ingresa identificación"
+            >
+
+            <button
+                id="consultar"
+                class="boton-secundario"
+            >
+                Buscar participante
+            </button>
+
+            <div
+                id="consulta"
+                class="resultado"
+                aria-live="polite"
+            ></div>
+
+            <hr class="separador">
+
+            <!-- ENVIOS -->
+
+            <h2>Gestión de correos</h2>
+
+            <p class="descripcion">
+                Enviar credenciales QR mediante Brevo
+                y consultar los estados de envío.
+            </p>
+
+            <button id="envioMasivo">
+                Enviar hasta 20 QR pendientes
+            </button>
+
+            <button
+                id="verEnvios"
+                class="boton-secundario"
+            >
+                Ver historial de envíos
+            </button>
+
+            <div
+                id="historial"
+                class="resultado"
+                aria-live="polite"
+            ></div>
+
+            <hr class="separador">
+
+            <!-- REPORTES -->
+
+            <h2>Reportes de asistencia</h2>
+
+            <p class="descripcion">
+                Descargar la lista de participantes
+                y su estado de ingreso.
+            </p>
+
+            <button
+                id="exportar"
+                class="boton-secundario"
+            >
+                Descargar asistencia CSV
+            </button>
+
+        </section>
+
+        <!-- PARTICIPANTES -->
+
+        <section class="tarjeta">
+
+            <div class="icono">👥</div>
+
+            <h2>Participantes registrados</h2>
+
+            <p class="descripcion">
+                Aquí aparecerán los participantes
+                registrados en la base de datos.
+            </p>
+
+            <div id="listaParticipantes">
+
+                <p class="descripcion">
+                    Introduce la clave de administrador
+                    y pulsa "Ver participantes y estadísticas".
+                </p>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer>
+        Sistema complementario de gestión de eventos
+        <br>
+        Proyecto independiente de control de asistencia
+    </footer>
+
+    <script>
+
+        // ELEMENTOS GENERALES
+
+        const $ = (id) => {
+            return document.getElementById(id);
+        };
+
+        function cabeceras() {
+            return {
+                "X-Admin-Key": $("clave").value
+            };
+        }
+
+        function errorAPI(datos) {
+            return typeof datos.detail === "string"
+                ? datos.detail
+                : "No se pudo completar la operación.";
+        }
+
+        // CONSULTAR PARTICIPANTES
+
+        async function cargar() {
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/participantes",
+                    {
+                        headers: cabeceras()
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                const estados = Object.entries(
+                    datos.envios || {}
+                ).map(([estado, cantidad]) => {
+                    return `${estado}: ${cantidad}`;
+                }).join(" · ");
+
+                $("resumen").textContent =
+                    `Inscritos: ${datos.total}\n` +
+                    `Asistieron: ${datos.asistieron}\n` +
+                    `Pendientes: ${datos.pendientes}\n\n` +
+                    `Correos: ${estados || "Sin envíos"}\n` +
+                    `Brevo: ${datos.brevo_configurado
+                        ? "Configurado"
+                        : "Sin configurar"}\n` +
+                    `Límite diario: ${datos.limite_diario}`;
+
+                const lista = $("listaParticipantes");
+
+                lista.replaceChildren();
+
+                for (const persona of datos.participantes) {
+
+                    const tarjeta = document.createElement("div");
+
+                    tarjeta.className = "participante";
+
+                    const nombre = document.createElement("h3");
+                    nombre.textContent = persona.nombre;
+
+                    tarjeta.append(nombre);
+
+                    function agregarDato(etiqueta, valor) {
+
+                        const p = document.createElement("p");
+
+                        p.textContent = `${etiqueta}: ${valor}`;
+
+                        tarjeta.append(p);
+                    }
+
+                    agregarDato(
+                        "Identificación",
+                        persona.cedula
+                    );
+
+                    agregarDato(
+                        "Correo",
+                        persona.email || "No registrado"
+                    );
+
+                    agregarDato(
+                        "Estado del correo",
+                        persona.email_estado || "pendiente"
+                    );
+
+                    const estado = document.createElement("span");
+
+                    estado.className =
+                        "estado " +
+                        (persona.asistio_en
+                            ? "ingreso"
+                            : "pendiente");
+
+                    estado.textContent = persona.asistio_en
+                        ? "Asistencia confirmada"
+                        : "Pendiente de ingreso";
+
+                    tarjeta.append(estado);
+
+                    const acciones = document.createElement("div");
+
+                    acciones.className = "acciones";
+
+                    function crearBoton(
+                        texto,
+                        accion,
+                        clase = "boton-secundario"
+                    ) {
+
+                        const boton = document.createElement("button");
+
+                        boton.textContent = texto;
+                        boton.className = clase;
+                        boton.onclick = accion;
+
+                        acciones.append(boton);
+
+                        return boton;
+                    }
+
+                    crearBoton(
+                        "Descargar QR",
+                        () => descargarQR(persona.id)
+                    );
+
+                    const enviar = crearBoton(
+                        "Enviar QR por correo",
+                        () => enviarCorreo(persona.id)
+                    );
+
+                    enviar.disabled = !persona.email;
+
+                    if (
+                        ["error", "rebotado"].includes(
+                            persona.email_estado
+                        )
+                    ) {
+                        crearBoton(
+                            "Reintentar correo fallido",
+                            () => reintentarCorreo(persona.id)
+                        );
+                    }
+
+                    if (persona.telefono) {
+
+                        crearBoton(
+                            "Contactar por WhatsApp",
+                            () => abrirWhatsApp(persona.id)
+                        );
+                    }
+
+                    if (
+                        !persona.asistio_en &&
+                        persona.email_estado === "pendiente" &&
+                        !persona.email_intentos
+                    ) {
+
+                        crearBoton(
+                            "Eliminar participante",
+                            () => eliminarPersona(persona),
+                            "boton-peligro"
+                        );
+                    }
+
+                    tarjeta.append(acciones);
+
+                    lista.append(tarjeta);
+                }
+
+                if (!datos.participantes.length) {
+
+                    lista.textContent =
+                        "Todavía no existen participantes registrados.";
+                }
+
+            } catch (error) {
+
+                $("resumen").textContent = error.message;
+            }
+        }
+
+        // DESCARGAR QR
+
+        async function descargarQR(id) {
+
+            try {
+
+                const respuesta = await fetch(
+                    `/api/qr/${id}`,
+                    {
+                        headers: cabeceras()
+                    }
+                );
+
+                if (!respuesta.ok) {
+                    throw new Error(
+                        errorAPI(await respuesta.json())
+                    );
+                }
+
+                const archivo = await respuesta.blob();
+
+                const url = URL.createObjectURL(archivo);
+
+                const enlace = document.createElement("a");
+
+                enlace.href = url;
+                enlace.download = `credencial_${id}.png`;
+
+                enlace.click();
+
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                }, 5000);
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // ENVIAR CORREO INDIVIDUAL
+
+        async function enviarCorreo(id) {
+
+            if (!confirm("¿Enviar el código QR por correo?")) {
+                return;
+            }
+
+            try {
+
+                const respuesta = await fetch(
+                    `/api/enviar-correo/${id}`,
+                    {
+                        method: "POST",
+                        headers: cabeceras()
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                alert(datos.mensaje);
+
+                await cargar();
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // REINTENTAR CORREO
+
+        async function reintentarCorreo(id) {
+
+            if (!confirm("¿Reintentar este envío fallido?")) {
+                return;
+            }
+
+            try {
+
+                const respuesta = await fetch(
+                    `/api/reintentar-correo/${id}`,
+                    {
+                        method: "POST",
+                        headers: cabeceras()
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                alert(datos.mensaje);
+
+                await cargar();
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // WHATSAPP
+
+        async function abrirWhatsApp(id) {
+
+            try {
+
+                const respuesta = await fetch(
+                    `/api/whatsapp/${id}`,
+                    {
+                        headers: cabeceras()
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                window.open(
+                    datos.url,
+                    "_blank",
+                    "noopener,noreferrer"
+                );
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // SUBIR EXCEL
+
+        async function importarArchivo() {
+
+            const archivo = $("archivo").files[0];
+
+            if (!archivo) {
+                alert("Selecciona un Excel o CSV.");
+                return;
+            }
+
+            const formulario = new FormData();
+
+            formulario.append("archivo", archivo);
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/importar",
+                    {
+                        method: "POST",
+                        headers: cabeceras(),
+                        body: formulario
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                alert(
+                    `Importación completada.\n` +
+                    `Nuevos: ${datos.nuevos}\n` +
+                    `Actualizados: ${datos.actualizados}\n` +
+                    `Sin cambios: ${datos.existentes}\n` +
+                    `Protegidos: ${datos.protegidos}\n` +
+                    `Inválidos: ${datos.invalidos}`
+                );
+
+                await cargar();
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // BORRAR EJEMPLOS
+
+        async function borrarEjemplos() {
+
+            if (!confirm(
+                "¿Eliminar registros TEST sin envíos ni asistencias?"
+            )) {
+                return;
+            }
+
+            const codigo = prompt(
+                "Escribe ELIMINAR EJEMPLOS para confirmar"
+            );
+
+            if (codigo !== "ELIMINAR EJEMPLOS") {
+                return;
+            }
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/eliminar-ejemplos",
+                    {
+                        method: "POST",
+                        headers: {
+                            ...cabeceras(),
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            confirmacion: codigo
+                        })
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                alert(
+                    `Registros eliminados: ${datos.eliminados}`
+                );
+
+                await cargar();
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // ELIMINAR PARTICIPANTE
+
+        async function eliminarPersona(persona) {
+
+            const mensaje =
+                `¿Eliminar a ${persona.nombre}?\n` +
+                `Identificación: ${persona.cedula}`;
+
+            if (!confirm(mensaje)) {
+                return;
+            }
+
+            try {
+
+                const respuesta = await fetch(
+                    `/api/participantes/${persona.id}`,
+                    {
+                        method: "DELETE",
+                        headers: cabeceras()
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                alert("Participante eliminado.");
+
+                await cargar();
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // CONSULTAR IDENTIFICACION
+
+        async function consultarParticipante() {
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/consultar",
+                    {
+                        method: "POST",
+                        headers: {
+                            ...cabeceras(),
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            cedula: $("buscar").value.trim()
+                        })
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                $("consulta").textContent =
+                    `Nombre: ${datos.nombre}\n` +
+                    `Identificación: ${datos.cedula}\n` +
+                    `Estado: ${datos.asistio_en
+                        ? "Ingresó"
+                        : "Pendiente"}`;
+
+            } catch (error) {
+
+                $("consulta").textContent = error.message;
+            }
+        }
+
+        // ENVIO MASIVO
+
+        async function enviarPendientes() {
+
+            if (!confirm(
+                "¿Programar hasta 20 correos pendientes?"
+            )) {
+                return;
+            }
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/enviar-pendientes",
+                    {
+                        method: "POST",
+                        headers: {
+                            ...cabeceras(),
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            limite: 20
+                        })
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                alert(
+                    `Envíos programados: ${datos.programados}`
+                );
+
+                await cargar();
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // HISTORIAL DE CORREOS
+
+        async function verHistorial() {
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/envios",
+                    {
+                        headers: cabeceras()
+                    }
+                );
+
+                const datos = await respuesta.json();
+
+                if (!respuesta.ok) {
+                    throw new Error(errorAPI(datos));
+                }
+
+                const envios = datos.envios || [];
+
+                $("historial").textContent = envios
+                    .slice(0, 30)
+                    .map((envio) => {
+
+                        return (
+                            `${envio.fecha_utc}\n` +
+                            `${envio.destinatario}\n` +
+                            `Estado: ${envio.estado}\n` +
+                            `${envio.detalle || ""}`
+                        );
+
+                    })
+                    .join("\n\n----------------\n\n");
+
+                if (!envios.length) {
+
+                    $("historial").textContent =
+                        "Todavía no existen envíos.";
+                }
+
+            } catch (error) {
+
+                $("historial").textContent = error.message;
+            }
+        }
+
+        // EXPORTAR ASISTENCIAS
+
+        async function exportarAsistencia() {
+
+            try {
+
+                const respuesta = await fetch(
+                    "/api/exportar-asistencia",
+                    {
+                        headers: cabeceras()
+                    }
+                );
+
+                if (!respuesta.ok) {
+                    throw new Error(
+                        errorAPI(await respuesta.json())
+                    );
+                }
+
+                const archivo = await respuesta.blob();
+
+                const url = URL.createObjectURL(archivo);
+
+                const enlace = document.createElement("a");
+
+                enlace.href = url;
+
+                enlace.download = "asistencia_ups.csv";
+
+                enlace.click();
+
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                }, 5000);
+
+            } catch (error) {
+
+                alert(error.message);
+            }
+        }
+
+        // CONECTAR BOTONES
+
+        $("cargar").onclick = cargar;
+
+        $("importar").onclick = importarArchivo;
+
+        $("borrarEjemplos").onclick = borrarEjemplos;
+
+        $("consultar").onclick = consultarParticipante;
+
+        $("envioMasivo").onclick = enviarPendientes;
+
+        $("verEnvios").onclick = verHistorial;
+
+        $("exportar").onclick = exportarAsistencia;
+
+    </script>
+
+</body>
+
+</html>
