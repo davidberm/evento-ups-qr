@@ -1,6 +1,9 @@
 """Evento UPS: importación autorizada, credenciales y control de acceso.
 NO integra automáticamente el sistema de inscripciones de la universidad.
 """
+from cedula_ec import cedula_ec_valida
+from reportes_ups import instalar_reportes
+
 import base64, csv, hashlib, io, os, re, secrets, unicodedata, json, html
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -563,8 +566,15 @@ async def nuevo_registro(
     if len(nombres) < 2 or len(apellidos) < 2:
         raise HTTPException(400, "Nombres y apellidos incompletos.")
 
-    if not re.fullmatch(r"[A-Z0-9-]{5,50}", cedula):
-        raise HTTPException(400, "Identificación inválida.")
+    if not cedula_ec_valida(cedula): 
+        raise HTTPException(
+        status_code=400,
+        detail=(
+            "La cédula ecuatoriana no es válida. "
+            "Debe contener exactamente 10 números "
+            "y cumplir el dígito verificador."
+        )
+    )
 
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", correo):
         raise HTTPException(400, "Correo inválido.")
@@ -633,3 +643,17 @@ async def nuevo_registro(
             "contacta con la organización si no la recibes."
         )
     }
+
+
+# ==========================================
+# REPORTES DIARIOS Y EXPORTACION A EXCEL
+# ==========================================
+
+instalar_reportes(
+    app=app,
+    engine=engine,
+    people=people,
+    attempts=attempts,
+    event_id=EVENT_ID,
+    guard=guard
+)
