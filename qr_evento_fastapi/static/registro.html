@@ -369,16 +369,21 @@
                     <span class="obligatorio">*</span>
                 </label>
 
-                <input
-                    type="text"
-                    id="cedula"
-                    name="cedula"
-                    placeholder="Número de identificación"
-                    minlength="5"
-                    maxlength="50"
-                    autocomplete="off"
-                    required
-                >
+                
+<input
+    type="text"
+    id="cedula"
+    name="cedula"
+    placeholder="Ejemplo: 0104047568"
+    inputmode="numeric"
+    pattern="[0-9]{10}"
+    minlength="10"
+    maxlength="10"
+    autocomplete="off"
+    title="Ingresa una cédula ecuatoriana de 10 dígitos"
+    required
+>
+
 
                 <p class="ayuda">
                     Ingresa tu número de identificación
@@ -547,6 +552,85 @@
 
         // MOSTRAR MENSAJE
 
+
+const campoCedula = document.getElementById("cedula");
+
+// Permitir solo numeros y un maximo de 10 digitos.
+campoCedula.addEventListener("input", function () {
+    this.value = this.value
+        .replace(/[^0-9]/g, "")
+        .slice(0, 10);
+
+    this.setCustomValidity("");
+});
+
+// Comprobar matematicamente la cedula ecuatoriana.
+function validarCedulaEcuador(cedula) {
+
+    if (!/^[0-9]{10}$/.test(cedula)) {
+        return false;
+    }
+
+    const provincia = Number(cedula.slice(0, 2));
+
+    if (provincia < 1 || provincia > 24) {
+        return false;
+    }
+
+    if (Number(cedula[2]) >= 6) {
+        return false;
+    }
+
+    if (/^([0-9])\1{9}$/.test(cedula)) {
+        return false;
+    }
+
+    const coeficientes = [
+        2, 1, 2, 1, 2, 1, 2, 1, 2
+    ];
+
+    let suma = 0;
+
+    for (let i = 0; i < 9; i++) {
+
+        let resultado =
+            Number(cedula[i]) * coeficientes[i];
+
+        if (resultado > 9) {
+            resultado -= 9;
+        }
+
+        suma += resultado;
+    }
+
+    const verificador = (10 - (suma % 10)) % 10;
+
+    return verificador === Number(cedula[9]);
+}
+
+campoCedula.addEventListener("blur", function () {
+
+    if (this.value && !validarCedulaEcuador(this.value)) {
+
+        this.setCustomValidity(
+            "La cédula ecuatoriana no es válida."
+        );
+
+        this.reportValidity();
+
+    } else {
+
+        this.setCustomValidity("");
+    }
+});
+
+
+
+
+
+
+
+
         function mostrarMensaje(mensaje, tipo) {
 
             resultado.textContent = mensaje;
@@ -563,6 +647,17 @@
             async function (evento) {
 
                 evento.preventDefault();
+
+                if (!validarCedulaEcuador(campoCedula.value)) {
+
+    campoCedula.setCustomValidity(
+        "Ingresa una cédula ecuatoriana válida."
+    );
+
+    campoCedula.reportValidity();
+
+    return;
+}
 
                 boton.disabled = true;
 

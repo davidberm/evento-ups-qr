@@ -567,6 +567,87 @@
 
             <!-- REPORTES -->
 
+
+<!-- ======================================= -->
+<!-- REPORTE DIARIO Y EXCEL DEL EVENTO        -->
+<!-- ======================================= -->
+
+<h2>Reporte de participantes por fecha</h2>
+
+<p class="descripcion">
+    Consulta los inscritos, asistencias y correos
+    de una fecha determinada. Descarga los datos
+    en un archivo Excel organizado por hojas.
+</p>
+
+<label for="fechaReporte">
+    Seleccionar fecha
+</label>
+
+<input
+    type="date"
+    id="fechaReporte"
+    required
+>
+
+<label for="modoReporte">
+    Tipo de reporte
+</label>
+
+<select
+    id="modoReporte"
+    style="
+        width:100%;
+        padding:14px;
+        border:1px solid #bdc9da;
+        border-radius:10px;
+        font-size:16px;
+        background:white;
+    "
+>
+    <option value="evento">
+        Todos los inscritos del evento
+    </option>
+
+    <option value="actividad">
+        Actividad registrada en esta fecha
+    </option>
+</select>
+
+<p class="descripcion">
+    "Todos los inscritos" permite comprobar
+    quién ingresó o faltó en la fecha seleccionada.
+
+    "Actividad registrada" muestra personas
+    registradas, ingresos o intentos de correo
+    relacionados con ese día.
+</p>
+
+<button
+    type="button"
+    id="verReporte"
+    class="boton-secundario"
+>
+    Consultar estadísticas del día
+</button>
+
+<div
+    id="resumenReporte"
+    class="resultado"
+    aria-live="polite"
+>
+    Selecciona una fecha y consulta el reporte.
+</div>
+
+<button
+    type="button"
+    id="exportarExcel"
+>
+    Descargar Excel completo
+</button>
+
+<hr class="separador">
+
             <h2>Reportes de asistencia</h2>
 
             <p class="descripcion">
@@ -1254,6 +1335,135 @@
             }
         }
 
+// ==========================================
+// REPORTES DIARIOS Y DESCARGA EXCEL
+// ==========================================
+
+// Fecha actual de Ecuador.
+$("fechaReporte").value =
+    new Date().toLocaleDateString(
+        "sv-SE",
+        { timeZone: "America/Guayaquil" }
+    );
+
+// Obtener la fecha y modalidad.
+function parametrosReporte() {
+
+    const fecha = $("fechaReporte").value;
+
+    const modo = $("modoReporte").value;
+
+    if (!fecha) {
+        throw new Error("Selecciona una fecha.");
+    }
+
+    return new URLSearchParams({
+        fecha: fecha,
+        modo: modo
+    });
+}
+
+// Consultar resumen.
+async function consultarReporteDiario() {
+
+    try {
+
+        const parametros = parametrosReporte();
+
+        const respuesta = await fetch(
+            "/api/reporte-dia?" + parametros.toString(),
+            {
+                headers: cabeceras()
+            }
+        );
+
+        const datos = await respuesta.json();
+
+        if (!respuesta.ok) {
+            throw new Error(
+                errorAPI(datos)
+            );
+        }
+
+        const estados = Object.entries(
+            datos.estados_intentos_correo || {}
+        ).map(([estado, cantidad]) => {
+            return `${estado}: ${cantidad}`;
+        }).join("\n");
+
+        $("resumenReporte").textContent =
+            `Fecha: ${datos.fecha}\n` +
+            `Total: ${datos.personas}\n` +
+            `Ingresaron: ${datos.ingresaron_ese_dia}\n` +
+            `No ingresaron: ${datos.no_ingresaron_ese_dia}\n` +
+            `Registro rápido: ${datos.registro_rapido}\n` +
+            `Importación: ${datos.importacion}\n` +
+            `Intentos de correo: ${datos.intentos_correo}\n\n` +
+            `Estados:\n${estados || "Sin intentos"}`;
+
+    } catch (error) {
+
+        $("resumenReporte").textContent =
+            error.message;
+    }
+}
+
+// Exportar archivo Excel XLSX.
+async function descargarReporteExcel() {
+
+    try {
+
+        const parametros = parametrosReporte();
+
+        const respuesta = await fetch(
+            "/api/exportar-excel?" + parametros.toString(),
+            {
+                headers: cabeceras()
+            }
+        );
+
+        if (!respuesta.ok) {
+
+            const datos = await respuesta.json();
+
+            throw new Error(
+                errorAPI(datos)
+            );
+        }
+
+        const archivo = await respuesta.blob();
+
+        const url = URL.createObjectURL(archivo);
+
+        const enlace = document.createElement("a");
+
+        enlace.href = url;
+
+        enlace.download =
+            `evento_ups_${$("fechaReporte").value}.xlsx`;
+
+        document.body.appendChild(enlace);
+
+        enlace.click();
+
+        enlace.remove();
+
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 5000);
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+}
+
+// Activar botones.
+$("verReporte").onclick = consultarReporteDiario;
+
+$("exportarExcel").onclick = descargarReporteExcel;
+
+        
         // CONECTAR BOTONES
 
         $("cargar").onclick = cargar;
