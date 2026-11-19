@@ -479,6 +479,62 @@
             <!-- IMPORTACION -->
 
             <h2>Importar participantes</h2>
+            <hr class="separador">
+
+<h2>Historial de importaciones</h2>
+
+<p class="descripcion">
+    Consulta los archivos importados, sus fechas,
+    los participantes nuevos y los repetidos.
+</p>
+
+<button id="verHistorialImportaciones"
+        class="boton-secundario">
+    Ver historial de importaciones
+</button>
+
+<div id="historialImportaciones"
+     class="resultado"
+     aria-live="polite">
+    Introduce tu clave de administrador
+    para consultar las importaciones.
+</div>
+
+<div id="resultadoAnalisis"
+     class="resultado"
+     aria-live="polite">
+    Selecciona un Excel o CSV y pulsa
+    Analizar archivo.
+</div>
+
+<button id="confirmarImportacion"
+        type="button"
+        disabled>
+    Confirmar importación de nuevos
+</button>
+
+<hr class="separador">
+
+<h3>Participantes registrados anteriormente</h3>
+
+<p class="descripcion">
+    Consulta los registros anteriores,
+    agrupados por fecha y hora de Ecuador.
+    Esta opción no elimina participantes.
+</p>
+
+<button id="verAnteriores"
+        type="button"
+        class="boton-secundario">
+    Ver registros anteriores por hora
+</button>
+
+<div id="listaAnteriores"
+     class="resultado"
+     aria-live="polite">
+    Aquí aparecerán los registros anteriores.
+</div>
+
 
             <p class="descripcion">
                 Sube el archivo Excel o CSV
@@ -496,7 +552,7 @@
             >
 
             <button id="importar">
-                Subir y procesar archivo
+                Analizar archivo (sin importar)
             </button>
 
             <button
@@ -1479,6 +1535,389 @@ $("exportarExcel").onclick = descargarReporteExcel;
         $("verEnvios").onclick = verHistorial;
 
         $("exportar").onclick = exportarAsistencia;
+
+
+// ==================================================
+// NUEVO HISTORIAL DE IMPORTACIONES UPS
+// ==================================================
+
+let archivoAnalizado = null;
+
+async function consultarImportaciones(url, opciones = {}) {
+    const respuesta = await fetch(url, {
+        ...opciones,
+        headers: {
+            ...cabeceras(),
+            ...(opciones.headers || {})
+        }
+    });
+
+    if (!respuesta.ok) {
+        const error = await respuesta.json().catch(() => ({}));
+        throw new Error(
+            error.detail || "No se pudo completar la operación."
+        );
+    }
+
+    return respuesta.json();
+}
+
+
+// ANALIZAR EXCEL SIN GUARDAR PARTICIPANTES
+$("importar").onclick = async () => {
+    const archivo = $("archivo").files[0];
+
+    if (!archivo) {
+        alert("Selecciona un archivo Excel o CSV.");
+        return;
+    }
+
+    archivoAnalizado = null;
+    $("confirmarImportacion").disabled = true;
+    $("resultadoAnalisis").textContent =
+        "Analizando el archivo. Todavía no se guarda nada.";
+
+    const formulario = new FormData();
+    formulario.append("archivo", archivo);
+
+    try {
+        const datos = await consultarImportaciones(
+            "/api/importaciones/analizar",
+            {
+                method: "POST",
+                body: formulario
+            }
+        );
+
+        $("resultadoAnalisis").textContent =
+            `Archivo: ${datos.archivo}\n` +
+            `Total de filas: ${datos.filas}\n` +
+            `Nuevos: ${datos.nuevos}\n` +
+            `Ya existentes: ${datos.existentes}\n` +
+            `Repetidos dentro del archivo: ${datos.repetidos}\n` +
+            `Posibles duplicados por correo: ${datos.conflictos}\n` +
+            `Inválidos: ${datos.invalidos}\n\n` +
+            (datos.ya_importado
+                ? "Este archivo ya fue importado anteriormente."
+                : "Revisa los resultados antes de confirmar.");
+
+        if (!datos.ya_importado && datos.nuevos > 0) {
+            archivoAnalizado = datos.sha256;
+            $("confirmarImportacion").disabled = false;
+        }
+
+    } catch (error) {
+        $("resultadoAnalisis").textContent = error.message;
+    }
+};
+
+
+// SI CAMBIAS EL ARCHIVO, DEBES ANALIZAR OTRA VEZ
+$("archivo").addEventListener("change", () => {
+    archivoAnalizado = null;
+    $("confirmarImportacion").disabled = true;
+    $("resultadoAnalisis").textContent =
+        "Archivo seleccionado. Pulsa Analizar archivo.";
+});
+
+
+// CONFIRMAR IMPORTACIÓN
+$("confirmarImportacion").onclick = async () => {
+    const archivo = $("archivo").files[0];
+
+    if (!archivo || !archivoAnalizado) {
+        alert("Primero analiza un archivo.");
+        return;
+    }
+
+    if (!confirm(
+        "¿Agregar únicamente los participantes nuevos?"
+    )) {
+        return;
+    }
+
+    $("confirmarImportacion").disabled = true;
+
+    const formulario = new FormData();
+    formulario.append("archivo", archivo);
+
+    try {
+        const datos = await consultarImportaciones(
+            "/api/importaciones/confirmar?sha256=" +
+                encodeURIComponent(archivoAnalizado),
+            {
+                method: "POST",
+                body: formulario
+            }
+        );
+
+        archivoAnalizado = null;
+
+        $("resultadoAnalisis").textContent =
+            `Importación #${datos.importacion_id} completada.\n` +
+            `Nuevos agregados: ${datos.nuevos}\n` +
+            `Ya existentes: ${datos.existentes}\n` +
+            `Repetidos: ${datos.repetidos}\n` +
+            `Conflictos: ${datos.conflictos}\n` +
+            `Inválidos: ${datos.invalidos}`;
+
+        await cargar();
+        await verHistorialImportaciones();
+
+    } catch (error) {
+        $("resultadoAnalisis").textContent = error.message;
+    }
+};
+
+
+// DESCARGAR EXCEL O CSV CON AUTORIZACIÓN
+async function descargarNuevos(id, formato) {
+    const respuesta = await fetch(
+        `/api/importaciones/${id}/nuevos?formato=${formato}`,
+        { headers: cabeceras() }
+    );
+
+    if (!respuesta.ok) {
+        const error = await respuesta.json().catch(() => ({}));
+        throw new Error(error.detail || "No se pudo descargar.");
+    }
+
+    const url = URL.createObjectURL(await respuesta.blob());
+
+    const enlace = document.createElement("a");
+    enlace.href = url;
+    enlace.download = `ups_carga_${id}_nuevos.${formato}`;
+
+    document.body.appendChild(enlace);
+    enlace.click();
+    enlace.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+
+// CREAR BOTONES SIN INYECTAR HTML
+function crearBoton(texto, accion, clase = "boton-secundario") {
+    const boton = document.createElement("button");
+    boton.type = "button";
+    boton.textContent = texto;
+    boton.className = clase;
+    boton.onclick = accion;
+    return boton;
+}
+
+
+// CONSULTAR HISTORIAL DE ARCHIVOS
+async function verHistorialImportaciones() {
+    const contenedor = $("historialImportaciones");
+
+    contenedor.replaceChildren();
+    contenedor.textContent = "Consultando importaciones...";
+
+    try {
+        const datos = await consultarImportaciones(
+            "/api/importaciones"
+        );
+
+        contenedor.replaceChildren();
+
+        if (!datos.importaciones.length) {
+            contenedor.textContent =
+                "Todavía no existen archivos con historial. " +
+                "Consulta los registros anteriores más abajo.";
+            return;
+        }
+
+        for (const lote of datos.importaciones) {
+            const tarjeta = document.createElement("div");
+
+            tarjeta.style.cssText =
+                "padding:15px;margin:12px 0;" +
+                "background:#eef3f9;color:#132647;" +
+                "border-radius:12px;";
+
+            const titulo = document.createElement("p");
+            titulo.style.fontWeight = "bold";
+            titulo.textContent =
+                `Carga #${lote.id}: ${lote.archivo}`;
+
+            const informacion = document.createElement("p");
+            informacion.style.whiteSpace = "pre-line";
+            informacion.textContent =
+                `Fecha: ${lote.creada_en}\n` +
+                `Estado: ${lote.estado}\n` +
+                `Filas procesadas: ${lote.total}\n` +
+                `Nuevos: ${lote.nuevos}\n` +
+                `Existentes: ${lote.existentes}\n` +
+                `Repetidos: ${lote.repetidos}\n` +
+                `Conflictos: ${lote.conflictos}\n` +
+                `Inválidos: ${lote.invalidos}\n` +
+                `Eliminados al deshacer: ${lote.eliminados}`;
+
+            tarjeta.append(titulo, informacion);
+
+            tarjeta.appendChild(crearBoton(
+                "Ver detalles",
+                async () => {
+                    try {
+                        const datos = await consultarImportaciones(
+                            `/api/importaciones/${lote.id}`
+                        );
+
+                        alert(
+                            datos.detalles.map(p =>
+                                `Fila ${p.fila} | ` +
+                                `${p.documento} | ${p.accion}`
+                            ).join("\n").slice(0, 15000)
+                        );
+                    } catch (error) {
+                        alert(error.message);
+                    }
+                }
+            ));
+
+            tarjeta.appendChild(crearBoton(
+                "Descargar solo nuevos (Excel)",
+                async () => {
+                    try {
+                        await descargarNuevos(lote.id, "xlsx");
+                    } catch (error) {
+                        alert(error.message);
+                    }
+                }
+            ));
+
+            tarjeta.appendChild(crearBoton(
+                "Descargar solo nuevos (CSV)",
+                async () => {
+                    try {
+                        await descargarNuevos(lote.id, "csv");
+                    } catch (error) {
+                        alert(error.message);
+                    }
+                }
+            ));
+
+            if (lote.estado === "completada") {
+                tarjeta.appendChild(crearBoton(
+                    "Simular / Deshacer importación",
+                    async () => {
+                        try {
+                            const simulacion =
+                                await consultarImportaciones(
+                                    `/api/importaciones/${lote.id}/simular`
+                                );
+
+                            const mensaje =
+                                `Archivo: ${lote.archivo}\n\n` +
+                                `Se podrían eliminar: ` +
+                                `${simulacion.eliminables}\n` +
+                                `Protegidos: ` +
+                                `${simulacion.protegidos}\n\n` +
+                                "Los participantes anteriores, " +
+                                "sus QR y correos se conservarán.\n\n" +
+                                "¿Deseas continuar?";
+
+                            if (!confirm(mensaje)) return;
+
+                            const frase = `DESHACER ${lote.id}`;
+
+                            const entrada = prompt(
+                                `Escribe exactamente: ${frase}`
+                            );
+
+                            if (entrada !== frase) return;
+
+                            const resultado =
+                                await consultarImportaciones(
+                                    `/api/importaciones/${lote.id}/deshacer`,
+                                    {
+                                        method: "POST",
+                                        headers: {
+                                            "Content-Type": "application/json"
+                                        },
+                                        body: JSON.stringify({
+                                            confirmacion: frase
+                                        })
+                                    }
+                                );
+
+                            alert(
+                                `Eliminados: ${resultado.eliminados}\n` +
+                                `Protegidos: ${resultado.protegidos}`
+                            );
+
+                            await verHistorialImportaciones();
+                            await cargar();
+
+                        } catch (error) {
+                            alert(error.message);
+                        }
+                    },
+                    "boton-peligro"
+                ));
+            }
+
+            contenedor.appendChild(tarjeta);
+        }
+
+    } catch (error) {
+        contenedor.textContent = error.message;
+    }
+}
+
+$("verHistorialImportaciones").onclick =
+    verHistorialImportaciones;
+
+
+// VER PARTICIPANTES QUE YA EXISTÍAN ANTES
+$("verAnteriores").onclick = async () => {
+    const contenedor = $("listaAnteriores");
+
+    contenedor.replaceChildren();
+    contenedor.textContent =
+        "Consultando participantes anteriores...";
+
+    try {
+        const datos = await consultarImportaciones(
+            "/api/importaciones/anteriores"
+        );
+
+        contenedor.replaceChildren();
+
+        const resumen = document.createElement("p");
+        resumen.textContent =
+            `Registros anteriores sin historial: ${datos.total}`;
+
+        contenedor.appendChild(resumen);
+
+        for (const grupo of datos.grupos) {
+            const bloque = document.createElement("details");
+
+            const encabezado = document.createElement("summary");
+            encabezado.textContent =
+                `${grupo.hora} — ${grupo.cantidad} participantes`;
+
+            const contenido = document.createElement("p");
+            contenido.style.whiteSpace = "pre-line";
+
+            contenido.textContent = grupo.participantes
+                .map(p =>
+                    `ID: ${p.id} | ${p.nombre} | ` +
+                    `${p.cedula} | ${p.email_estado} | ` +
+                    (p.asistio ? "Ingresó" : "Sin ingreso")
+                )
+                .join("\n");
+
+            bloque.append(encabezado, contenido);
+            contenedor.appendChild(bloque);
+        }
+
+    } catch (error) {
+        contenedor.textContent = error.message;
+    }
+};
+
 
     </script>
 
