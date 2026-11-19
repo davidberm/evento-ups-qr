@@ -1,6 +1,8 @@
 """Evento UPS: importación autorizada, credenciales y control de acceso.
 NO integra automáticamente el sistema de inscripciones de la universidad.
 """
+from importaciones_ups import instalar_importaciones
+
 from cedula_ec import cedula_ec_valida
 from reportes_ups import instalar_reportes
 
@@ -206,66 +208,33 @@ def scanner(): return FileResponse(ROOT/'static'/'escanear.html')
 @app.get('/api/evento')
 def event(): return {'evento':EVENT,'evento_id':EVENT_ID,'inscripcion_oficial':URL_UPS,'base_de_datos':'PostgreSQL persistente' if DB_URL.startswith('postgresql+') else ('Azure SQL' if DB_URL.startswith('mssql') else 'SQLite temporal (solo pruebas)')}
 
-@app.post('/api/importar')
-async def importer(archivo:UploadFile=File(...), x_admin_key:str|None=Header(None)):
+
+# =====================================================
+# IMPORTACIÓN ANTIGUA DESACTIVADA
+# =====================================================
+# La importación anterior no guardaba historial.
+# Ahora utilizaremos el módulo importaciones_ups.py,
+# que permite analizar el Excel antes de confirmarlo.
+#
+# Esta ruta se conserva para evitar que una versión
+# antigua del navegador procese archivos sin historial.
+# =====================================================
+
+@app.post("/api/importar")
+def importacion_antigua_desactivada(
+    x_admin_key: str | None = Header(None)
+):
     guard(x_admin_key)
-    filename=(archivo.filename or '').lower()
-    if not filename.endswith(('.xlsx','.csv')): raise HTTPException(400,'Formato permitido: .xlsx o .csv')
-    raw=await archivo.read(8_000_001)
-    if len(raw)>8_000_000: raise HTTPException(413,'Máximo 8 MB')
-    try:
-        if filename.endswith('.xlsx'):
-            book=load_workbook(io.BytesIO(raw),read_only=True,data_only=True)
-            sheet=book.active
-            rows=sheet.iter_rows(values_only=True)
-            titles=next(rows,None)
-            if not titles: raise ValueError('Excel vacío')
-            records=({norm(k):('' if v is None else str(v).strip()) for k,v in zip(titles,values)} for values in rows)
-        else:
-            try: body=raw.decode('utf-8-sig')
-            except UnicodeDecodeError: body=raw.decode('cp1252')
-            try: dialect=csv.Sniffer().sniff(body[:2048],delimiters=',;\t')
-            except csv.Error: dialect=csv.excel
-            reader=csv.DictReader(io.StringIO(body),dialect=dialect)
-            records=({norm(k):str(v or '').strip() for k,v in r.items() if k is not None} for r in reader)
-        added=existing=updated=protected=invalid=0; errors=[]
-        with engine.begin() as conn:
-            for idx,row in enumerate(records,start=2):
-                doc=getfield(row,'identificacion','cedula','documento','numero de identificacion','numero de documento')
-                name=getfield(row,'nombre completo','participante','nombres','nombre')
-                surname=getfield(row,'apellidos','apellido')
-                if surname and surname.lower() not in name.lower(): name=f'{name} {surname}'.strip()
-                email=getfield(row,'correo personal','correo electronico','correo','email','e-mail')
-                phone=getfield(row,'celular','telefono','telefono movil','whatsapp','numero de celular')
-                typ=getfield(row,'tipo inscripcion','tipo de inscripcion')
-                if not (5<=len(doc)<=50 and 2<=len(name)<=200) or (email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email)):
-                    invalid+=1
-                    if len(errors)<20:errors.append(idx)
-                    continue
-                old=conn.execute(select(people.c.id,people.c.nombre,people.c.email,people.c.telefono,people.c.tipo,
-                    people.c.asistio_en,people.c.email_estado,people.c.email_intentos).where(and_(
-                    people.c.evento_id==EVENT_ID,people.c.cedula==doc))).first()
-                if old:
-                    # No se cambia el destinatario de un QR ya enviado ni una asistencia existente.
-                    if old.asistio_en or old.email_estado!='pendiente' or old.email_intentos:
-                        protected+=1
-                        continue
-                    changes={}
-                    for field,value in [('nombre',name),('email',email),('telefono',phone),('tipo',typ)]:
-                        # Las celdas vacías del Excel no borran datos existentes por accidente.
-                        if value and value != getattr(old,field): changes[field]=value
-                    if changes:
-                        conn.execute(update(people).where(people.c.id==old.id).values(**changes))
-                        updated+=1
-                    else:
-                        existing+=1
-                    continue
-                token=secrets.token_urlsafe(32)
-                conn.execute(insert(people).values(evento_id=EVENT_ID,cedula=doc,nombre=name,email=email,
-                    telefono=phone,tipo=typ,token_hash=hashlib.sha256(token.encode()).hexdigest(),token=token,registrado_en=now()))
-                added+=1
-        return {'mensaje':'Archivo procesado correctamente','nuevos':added,'existentes':existing,'actualizados':updated,'protegidos':protected,'invalidos':invalid,'filas_invalidas':errors}
-    except (ValueError,StopIteration) as e: raise HTTPException(400,'No se pudo leer el archivo: '+str(e)) from e
+
+    raise HTTPException(
+        status_code=410,
+        detail=(
+            "La importación antigua está desactivada. "
+            "Utiliza el nuevo apartado de importaciones: "
+            "Analizar archivo y Confirmar importación."
+        )
+    )
+
 
 
 @app.delete('/api/participantes/{pid}')
@@ -650,6 +619,16 @@ async def nuevo_registro(
 # ==========================================
 
 instalar_reportes(
+    app=app,
+    engine=engine,
+    people=people,
+    attempts=attempts,
+    event_id=EVENT_ID,
+    guard=guard
+)
+
+# HISTORIAL E IMPORTACIONES INCREMENTALES
+instalar_importaciones(
     app=app,
     engine=engine,
     people=people,
