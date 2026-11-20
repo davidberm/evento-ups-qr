@@ -1,1551 +1,819 @@
 
 <!DOCTYPE html>
 <html lang="es">
-
 <head>
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sistema de Eventos UPS</title>
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+<style>
+:root {
+    --azul: #173c72;
+    --primario: #2563eb;
+    --fondo: #f1f5fb;
+    --texto: #172b4d;
+    --gris: #60728e;
+    --borde: #dce5f1;
+    --verde: #16834a;
+    --rojo: #b91c1c;
+}
 
-    <title>Sistema de Eventos UPS</title>
+* { box-sizing: border-box; }
 
-    <style>
-        :root {
-            --azul: #12345a;
-            --azul-claro: #2563eb;
-            --fondo: #f2f5fa;
-            --blanco: #ffffff;
-            --texto: #172b4d;
-            --gris: #66758c;
-            --borde: #dce5f0;
-            --verde: #15803d;
-            --rojo: #b91c1c;
-        }
+[hidden] { display: none !important; }
 
-        * {
-            box-sizing: border-box;
-        }
+body {
+    margin: 0;
+    background: var(--fondo);
+    font-family: Arial, Helvetica, sans-serif;
+    color: var(--texto);
+}
 
-        body {
-            margin: 0;
-            background: var(--fondo);
-            font-family: Arial, Helvetica, sans-serif;
-            color: var(--texto);
-        }
+header {
+    background: linear-gradient(135deg, #102c56, #23559c);
+    color: white;
+    padding: 34px 20px;
+    text-align: center;
+}
 
-        header {
-            background: linear-gradient(
-                135deg,
-                #102a50,
-                #2356a2
-            );
+header h1 {
+    font-size: 29px;
+    margin: 8px 0 14px;
+}
 
-            padding: 35px 20px;
-            text-align: center;
-            color: white;
-        }
+header p {
+    max-width: 750px;
+    margin: 7px auto;
+    line-height: 1.6;
+}
 
-        header h1 {
-            font-size: 28px;
-            margin-bottom: 12px;
-        }
+.contenedor {
+    max-width: 800px;
+    padding: 0 16px;
+    margin: 28px auto;
+}
 
-        header p {
-            max-width: 650px;
-            margin: auto;
-            line-height: 1.7;
-        }
+.tarjeta {
+    padding: 26px;
+    background: white;
+    border: 1px solid var(--borde);
+    border-radius: 18px;
+    margin-bottom: 20px;
+    box-shadow: 0 5px 22px #1635590b;
+}
 
-        .contenedor {
-            width: 100%;
-            max-width: 750px;
-            margin: 30px auto;
-            padding: 0 16px;
-        }
+.tarjeta h2 {
+    margin: 0 0 12px;
+    font-size: 21px;
+}
 
-        .tarjeta {
-            background: white;
-            border: 1px solid var(--borde);
-            border-radius: 18px;
-            padding: 26px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 20px #1730500a;
-        }
+.tarjeta h3 {
+    font-size: 17px;
+    margin: 19px 0 10px;
+}
 
-        .tarjeta h2 {
-            margin-top: 0;
-            font-size: 22px;
-        }
+.icono {
+    font-size: 34px;
+    margin-bottom: 12px;
+}
 
-        .descripcion {
-            color: var(--gris);
-            font-size: 14px;
-            line-height: 1.7;
-        }
+.descripcion {
+    font-size: 14px;
+    color: var(--gris);
+    line-height: 1.75;
+}
 
-        .icono {
-            font-size: 34px;
-            margin-bottom: 12px;
-        }
+button, .boton {
+    display: block;
+    width: 100%;
+    background: var(--primario);
+    color: white;
+    border: 0;
+    border-radius: 11px;
+    padding: 14px 16px;
+    margin-top: 12px;
+    font-weight: bold;
+    font-size: 14px;
+    text-decoration: none;
+    text-align: center;
+    cursor: pointer;
+}
 
-        .boton,
-        button {
-            display: block;
-            width: 100%;
-            border: none;
-            padding: 15px;
-            border-radius: 11px;
-            margin-top: 13px;
-            text-align: center;
-            text-decoration: none;
-            font-size: 15px;
-            font-weight: bold;
-            cursor: pointer;
-            background: var(--azul-claro);
-            color: white;
-        }
+button:hover, .boton:hover {
+    filter: brightness(.96);
+}
 
-        .boton-secundario {
-            background: #e9f0fc;
-            color: #194278;
-        }
+button:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+}
 
-        .boton-peligro {
-            background: #fff1f1;
-            color: var(--rojo);
-        }
+.boton-secundario {
+    background: #e8efff;
+    color: #19457d;
+}
 
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+.boton-peligro {
+    background: #fff0f0;
+    color: var(--rojo);
+}
 
-        label {
-            display: block;
-            font-size: 14px;
-            font-weight: bold;
-            margin-top: 18px;
-            margin-bottom: 8px;
-        }
+.boton-volver {
+    color: #173c72;
+    background: white;
+    border: 1px solid #c8d7ed;
+}
 
-        input {
-            display: block;
-            width: 100%;
-            padding: 14px;
-            border: 1px solid #bdc9da;
-            border-radius: 10px;
-            font-size: 16px;
-        }
+label {
+    display: block;
+    font-size: 14px;
+    font-weight: bold;
+    margin: 15px 0 8px;
+}
 
-        input:focus {
-            outline: 2px solid #95b7fa;
-            border-color: var(--azul-claro);
-        }
+input, select {
+    display: block;
+    width: 100%;
+    padding: 13px;
+    font-size: 15px;
+    background: white;
+    border: 1px solid #becbdb;
+    border-radius: 10px;
+}
 
-        .resultado {
-            background: #f1f5fc;
-            padding: 16px;
-            border-radius: 12px;
-            margin-top: 17px;
-            white-space: pre-line;
-            overflow-wrap: anywhere;
-            line-height: 1.7;
-            font-size: 14px;
-        }
+input:focus, select:focus {
+    outline: 2px solid #a4c0ff;
+}
 
-        .qr-publico {
-            text-align: center;
-            padding: 20px;
-            background: #f6f9ff;
-            border-radius: 15px;
-            margin-top: 16px;
-        }
+.resultado {
+    background: #f0f4fc;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 14px;
+    font-size: 14px;
+    line-height: 1.75;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
 
-        .qr-publico img {
-            display: block;
-            width: 220px;
-            max-width: 100%;
-            margin: 15px auto;
-            padding: 12px;
-            background: white;
-            border-radius: 12px;
-        }
+.aviso {
+    background: #fff7e3;
+    border-left: 4px solid #e8a72e;
+    border-radius: 9px;
+    padding: 14px;
+    margin-top: 14px;
+    font-size: 13px;
+    line-height: 1.6;
+}
 
-        .estadisticas {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-top: 18px;
-        }
+.qr-publico {
+    text-align: center;
+    background: #f5f8fe;
+    border-radius: 15px;
+    padding: 20px;
+    margin-top: 17px;
+}
 
-        .bloque {
-            background: #f6f9ff;
-            padding: 16px;
-            border: 1px solid var(--borde);
-            border-radius: 12px;
-        }
+.qr-publico img {
+    display: block;
+    width: 225px;
+    max-width: 100%;
+    margin: auto;
+    padding: 10px;
+    background: white;
+    border-radius: 12px;
+}
 
-        .participante {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            padding: 20px;
-            border: 1px solid var(--borde);
-            border-radius: 15px;
-            margin-top: 15px;
-            background: #fafcff;
-        }
+.separador {
+    border: 0;
+    border-top: 1px solid var(--borde);
+    margin: 26px 0;
+}
 
-        .participante h3 {
-            margin: 0;
-            overflow-wrap: anywhere;
-        }
+.acceso-organizador {
+    text-align: center;
+    background: linear-gradient(145deg, #fff, #edf3ff);
+}
 
-        .participante p {
-            font-size: 14px;
-            margin: 2px 0;
-            overflow-wrap: anywhere;
-        }
+.acceso-organizador label {
+    text-align: left;
+}
 
-        .estado {
-            display: inline-block;
-            padding: 7px 12px;
-            border-radius: 20px;
-            background: #eef2ff;
-            font-size: 12px;
-            font-weight: bold;
-        }
+.cabecera-admin {
+    color: white;
+    background: linear-gradient(135deg, #153767, #285bad);
+}
 
-        .ingreso {
-            background: #dcfce7;
-            color: #166534;
-        }
+.cabecera-admin h2,
+.cabecera-admin .descripcion {
+    color: white;
+}
 
-        .pendiente {
-            background: #fef3c7;
-            color: #92400e;
-        }
+.estado-admin {
+    display: inline-block;
+    background: #dcfce7;
+    color: #166534;
+    font-weight: bold;
+    padding: 8px 14px;
+    border-radius: 25px;
+    font-size: 13px;
+}
 
-        .acciones {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-top: 8px;
-        }
+.participante, .lote, .grupo-historico {
+    background: #f8fbff;
+    border: 1px solid #dce6f3;
+    border-radius: 13px;
+    padding: 16px;
+    margin-top: 12px;
+}
 
-        .acciones button {
-            margin-top: 0;
-        }
+.participante h3 {
+    margin-top: 0;
+    overflow-wrap: anywhere;
+}
 
-        .separador {
-            border: none;
-            border-top: 1px solid var(--borde);
-            margin: 25px 0;
-        }
+.participante p {
+    margin: 7px 0;
+    font-size: 14px;
+    overflow-wrap: anywhere;
+}
 
-        .aviso {
-            background: #fff8e5;
-            padding: 15px;
-            border-radius: 10px;
-            border-left: 4px solid #e5a328;
-            font-size: 13px;
-            line-height: 1.6;
-        }
+.estado {
+    display: inline-block;
+    border-radius: 20px;
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: bold;
+    background: #fef3c7;
+    color: #92400e;
+}
 
-        footer {
-            padding: 25px 15px;
-            text-align: center;
-            color: #7b899c;
-            font-size: 12px;
-        }
+.estado.ingreso {
+    background: #dcfce7;
+    color: #166534;
+}
 
-        @media (max-width: 600px) {
-            .contenedor {
-                margin-top: 18px;
-            }
+.acciones {
+    margin-top: 12px;
+    display: grid;
+    gap: 8px;
+}
 
-            .tarjeta {
-                padding: 19px;
-            }
+.acciones button { margin: 0; }
 
-            header h1 {
-                font-size: 24px;
-            }
-        }
-    </style>
+.fila-botones {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.fila-botones button { margin-top: 12px; }
+
+summary {
+    cursor: pointer;
+    font-weight: bold;
+    padding: 11px 2px;
+}
+
+details {
+    border-bottom: 1px solid var(--borde);
+    padding: 4px 0;
+}
+
+.texto-error { color: var(--rojo); }
+.texto-exito { color: var(--verde); }
+
+.vista-app {
+    animation: aparecer .2s ease;
+}
+
+@keyframes aparecer {
+    from { opacity: 0; transform: translateY(7px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+footer {
+    text-align: center;
+    color: #74829a;
+    font-size: 12px;
+    padding: 25px;
+    line-height: 1.7;
+}
+
+@media (max-width: 600px) {
+    .tarjeta { padding: 19px; }
+    header h1 { font-size: 24px; }
+    .fila-botones { grid-template-columns: 1fr; }
+}
+</style>
 </head>
 
 <body>
 
-    <!-- ENCABEZADO -->
+<header>
+    <div class="icono">🎓</div>
+    <h1>Sistema de Eventos UPS</h1>
+    <p>
+        Conferencia: Software Libre, Libertad Digital
+        y su Relación con el Machine Learning
+    </p>
+    <p>
+        23 de noviembre de 2026
+        <br>10:00 - 13:00
+        <br>Guayaquil - María Auxiliadora
+    </p>
+</header>
 
-    <header>
-        <div class="icono">🎓</div>
+<main class="contenedor">
 
-        <h1>Sistema de Eventos UPS</h1>
+    <!-- ======================================
+         VISTA PUBLICA
+         ====================================== -->
 
-        <p>
-            Conferencia: Software Libre,
-            Libertad Digital y su Relación
-            con el Machine Learning
-        </p>
-
-        <p>
-            23 de noviembre de 2026
-            <br>
-            10:00 - 13:00
-            <br>
-            Guayaquil - Centenario
-        </p>
-    </header>
-
-    <main class="contenedor">
-
-        <!-- INSCRIPCION OFICIAL -->
+    <div id="vistaPublica" class="vista-app">
 
         <section class="tarjeta">
-
             <div class="icono">📝</div>
-
             <h2>Inscripción oficial</h2>
 
             <p class="descripcion">
-                Accede al formulario institucional
-                de la Universidad Politécnica Salesiana.
+                Accede al formulario institucional de
+                la Universidad Politécnica Salesiana.
             </p>
 
-            <a
-                class="boton"
-                href="https://appwfp.ups.edu.ec/foc-webins/index.xhtml?prog=2207"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
+            <a class="boton"
+               href="https://appwfp.ups.edu.ec/foc-webins/index.xhtml?prog=2207"
+               target="_blank"
+               rel="noopener noreferrer">
                 Abrir inscripción UPS
             </a>
 
             <p class="aviso">
                 Los inscritos mediante el portal oficial
-                deben importarse al sistema mediante Excel
-                o CSV autorizado.
+                deben importarse al sistema mediante
+                Excel o CSV autorizado.
             </p>
-
         </section>
 
-        <!-- REGISTRO RAPIDO -->
-
         <section class="tarjeta">
-
             <div class="icono">👤</div>
-
             <h2>Registro rápido de participantes</h2>
 
             <p class="descripcion">
-                Este apartado permite registrar
-                participantes nuevos que todavía
-                no tengan una credencial de ingreso.
+                Permite registrar a personas nuevas
+                que todavía no tengan una credencial
+                de ingreso.
             </p>
 
             <p class="descripcion">
-                Solamente se solicitarán:
-                nombres, apellidos, identificación
-                y correo electrónico.
+                Se solicitarán nombre, apellido,
+                identificación y correo electrónico.
             </p>
 
-            <a
-                class="boton"
-                href="/registro"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
+            <a class="boton" href="/registro">
                 Abrir formulario de registro
             </a>
-
         </section>
 
-        <!-- QR PUBLICO -->
-
         <section class="tarjeta">
-
             <div class="icono">📱</div>
-
             <h2>QR público de inscripción</h2>
 
             <p class="descripcion">
-                Los participantes pueden escanear
-                este código con la cámara de su celular.
-                Serán enviados al formulario
-                de registro rápido.
+                Los participantes pueden escanear este
+                QR para acceder al formulario de registro.
             </p>
 
             <div class="qr-publico">
-
                 <h3>Escanea para registrarte</h3>
 
-                <img
-                    src="/registro/qr"
-                    alt="Código QR público para registro"
-                    id="qrRegistro"
-                >
+                <img id="qrRegistro"
+                     src="/registro/qr"
+                     alt="QR público del registro UPS">
 
                 <p class="descripcion">
                     Registro de nuevos participantes
                 </p>
-
             </div>
 
-            <a
-                class="boton boton-secundario"
-                href="/registro/qr"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
+            <a class="boton boton-secundario"
+               href="/registro/qr"
+               target="_blank"
+               rel="noopener noreferrer">
                 Ver y guardar QR público
             </a>
-
         </section>
 
-        <!-- VALIDADOR QR -->
-
         <section class="tarjeta">
-
             <div class="icono">📷</div>
-
             <h2>Control de asistencia</h2>
 
             <p class="descripcion">
-                El organizador podrá activar
-                la cámara y escanear los códigos
-                QR de los participantes.
+                El personal autorizado puede activar
+                la cámara, escanear credenciales y
+                comprobar quién ingresó al evento.
             </p>
 
             <p class="descripcion">
-                El sistema mostrará si la entrada
-                es válida o si la persona
-                ya ingresó anteriormente.
+                Esta función solicita la clave
+                del organizador o del controlador,
+                según la configuración del servidor.
             </p>
 
-            <a
-                class="boton"
-                href="/escanear"
-            >
-                Validar código QR
+            <a class="boton" href="/escanear">
+                📷 Validar código QR
             </a>
-
         </section>
 
-        <!-- ADMINISTRACION -->
-
-        <section class="tarjeta">
+        <section class="tarjeta acceso-organizador"
+                 id="accesoOrganizador">
 
             <div class="icono">🔐</div>
-
             <h2>Panel del organizador</h2>
 
             <p class="descripcion">
-                Acceso administrativo para gestionar
-                inscripciones, credenciales QR
-                y asistencias.
+                Acceso privado para administrar
+                participantes, importaciones,
+                credenciales QR, correos y reportes.
             </p>
 
-            <label for="clave">
-                Clave de administrador
-            </label>
-
-            <input
-                type="password"
-                id="clave"
-                placeholder="Introduce tu clave"
-                autocomplete="off"
-            >
-
-            <button id="cargar">
-                Ver participantes y estadísticas
+            <button type="button"
+                    id="mostrarAccesoAdmin">
+                🔐 Ingresar al panel del organizador
             </button>
 
-            <div
-                id="resumen"
-                class="resultado"
-                aria-live="polite"
-            >
-                Introduce tu clave para consultar
-                las estadísticas.
+            <div id="formularioAccesoAdmin" hidden>
+
+                <label for="clave">
+                    Contraseña del organizador
+                </label>
+
+                <input type="password"
+                       id="clave"
+                       placeholder="Introduce tu contraseña"
+                       autocomplete="off">
+
+                <button type="button"
+                        id="iniciarSesionAdmin">
+                    Acceder al panel privado
+                </button>
+
+                <button type="button"
+                        id="cancelarAccesoAdmin"
+                        class="boton-volver">
+                    Cancelar
+                </button>
+
+                <div id="mensajeAccesoAdmin"
+                     class="resultado"
+                     role="status"
+                     aria-live="polite">
+                    Introduce tu clave administrativa.
+                </div>
+
+            </div>
+        </section>
+
+    </div>
+
+    <!-- ======================================
+         VISTA PRIVADA DEL ORGANIZADOR
+         ====================================== -->
+
+    <div id="vistaOrganizador"
+         class="vista-app"
+         hidden>
+
+        <section class="tarjeta cabecera-admin">
+            <div class="icono">🛡️</div>
+            <h2>Administración del evento</h2>
+
+            <p class="descripcion">
+                Panel privado para gestionar
+                inscripciones, importaciones,
+                correos y reportes.
+            </p>
+
+            <div class="estado-admin">
+                ● Acceso autorizado
+            </div>
+
+            <button type="button"
+                    id="volverInicioAdmin"
+                    class="boton-volver">
+                ← Volver al inicio y cerrar sesión
+            </button>
+        </section>
+
+        <!-- ESTADISTICAS -->
+
+        <section class="tarjeta">
+            <div class="icono">📊</div>
+            <h2>Resumen del evento</h2>
+
+            <p class="descripcion">
+                Participantes registrados, asistencias,
+                correos y límite de envíos.
+            </p>
+
+            <button type="button" id="cargar">
+                Actualizar participantes y estadísticas
+            </button>
+
+            <div id="resumen"
+                 class="resultado"
+                 aria-live="polite">
+                Consultando información...
+            </div>
+        </section>
+
+        <!-- IMPORTACIONES -->
+
+        <section class="tarjeta">
+            <div class="icono">📥</div>
+            <h2>Importar participantes</h2>
+
+            <p class="descripcion">
+                Analiza un Excel o CSV antes de guardarlo.
+                El sistema identificará nuevos,
+                existentes, repetidos y conflictos.
+            </p>
+
+            <label for="archivo">
+                Seleccionar Excel o CSV
+            </label>
+
+            <input type="file"
+                   id="archivo"
+                   accept=".xlsx,.csv">
+
+            <button type="button" id="importar">
+                Analizar archivo (sin importar)
+            </button>
+
+            <div id="resultadoAnalisis"
+                 class="resultado"
+                 aria-live="polite">
+                Selecciona un archivo para analizar.
+            </div>
+
+            <button type="button"
+                    id="confirmarImportacion"
+                    disabled>
+                Confirmar importación de nuevos
+            </button>
+
+            <hr class="separador">
+
+            <h2>Historial de importaciones</h2>
+
+            <p class="descripcion">
+                Consulta los archivos procesados,
+                sus fechas, los participantes nuevos
+                y los que ya existían.
+            </p>
+
+            <button type="button"
+                    class="boton-secundario"
+                    id="verHistorialImportaciones">
+                Ver historial de importaciones
+            </button>
+
+            <div id="historialImportaciones"
+                 class="resultado"
+                 aria-live="polite">
+                Pulsa el botón para consultar las cargas.
             </div>
 
             <hr class="separador">
 
-            <!-- IMPORTACION -->
-
-            <h2>Importar participantes</h2>
-            <hr class="separador">
-
-<h2>Historial de importaciones</h2>
-
-<p class="descripcion">
-    Consulta los archivos importados, sus fechas,
-    los participantes nuevos y los repetidos.
-</p>
-
-<button id="verHistorialImportaciones"
-        class="boton-secundario">
-    Ver historial de importaciones
-</button>
-
-<div id="historialImportaciones"
-     class="resultado"
-     aria-live="polite">
-    Introduce tu clave de administrador
-    para consultar las importaciones.
-</div>
-
-<div id="resultadoAnalisis"
-     class="resultado"
-     aria-live="polite">
-    Selecciona un Excel o CSV y pulsa
-    Analizar archivo.
-</div>
-
-<button id="confirmarImportacion"
-        type="button"
-        disabled>
-    Confirmar importación de nuevos
-</button>
-
-<hr class="separador">
-
-<h3>Participantes registrados anteriormente</h3>
-
-<p class="descripcion">
-    Consulta los registros anteriores,
-    agrupados por fecha y hora de Ecuador.
-    Esta opción no elimina participantes.
-</p>
-
-<button id="verAnteriores"
-        type="button"
-        class="boton-secundario">
-    Ver registros anteriores por hora
-</button>
-
-<div id="listaAnteriores"
-     class="resultado"
-     aria-live="polite">
-    Aquí aparecerán los registros anteriores.
-</div>
-
+            <h3>Participantes registrados anteriormente</h3>
 
             <p class="descripcion">
-                Sube el archivo Excel o CSV
-                proporcionado por la organización.
+                Consulta registros antiguos agrupados
+                por fecha y hora de Ecuador.
+                No se eliminarán desde este listado.
             </p>
 
-            <label for="archivo">
-                Seleccionar archivo
-            </label>
-
-            <input
-                type="file"
-                id="archivo"
-                accept=".xlsx,.csv"
-            >
-
-            <button id="importar">
-                Analizar archivo (sin importar)
+            <button type="button"
+                    id="verAnteriores"
+                    class="boton-secundario">
+                Ver registros anteriores por hora
             </button>
 
-            <button
-                id="borrarEjemplos"
-                class="boton-peligro"
-            >
-                Borrar registros de prueba
-            </button>
+            <div id="listaAnteriores"
+                 class="resultado"
+                 aria-live="polite">
+                Aquí aparecerán los registros anteriores.
+            </div>
 
             <hr class="separador">
 
-            <!-- CONSULTAR PERSONA -->
+            <button type="button"
+                    id="borrarEjemplos"
+                    class="boton-peligro">
+                Borrar registros TEST sin actividad
+            </button>
+        </section>
 
+        <!-- BUSCADOR -->
+
+        <section class="tarjeta">
+            <div class="icono">🔎</div>
             <h2>Consultar participante</h2>
 
             <label for="buscar">
                 Cédula o identificación
             </label>
 
-            <input
-                type="text"
-                id="buscar"
-                placeholder="Ingresa identificación"
-            >
+            <input type="text"
+                   id="buscar"
+                   placeholder="Número de identificación">
 
-            <button
-                id="consultar"
-                class="boton-secundario"
-            >
+            <button type="button"
+                    id="consultar"
+                    class="boton-secundario">
                 Buscar participante
             </button>
 
-            <div
-                id="consulta"
-                class="resultado"
-                aria-live="polite"
-            ></div>
+            <div id="consulta"
+                 class="resultado"
+                 aria-live="polite">
+                Ingresa una identificación.
+            </div>
+        </section>
 
-            <hr class="separador">
+        <!-- CORREOS -->
 
-            <!-- ENVIOS -->
-
+        <section class="tarjeta">
+            <div class="icono">✉️</div>
             <h2>Gestión de correos</h2>
 
             <p class="descripcion">
-                Enviar credenciales QR mediante Brevo
-                y consultar los estados de envío.
+                Envía credenciales QR mediante Brevo.
+                Los participantes ya procesados no
+                se reenvían automáticamente.
             </p>
 
-            <button id="envioMasivo">
+            <button type="button" id="envioMasivo">
                 Enviar hasta 20 QR pendientes
             </button>
 
-            <button
-                id="verEnvios"
-                class="boton-secundario"
-            >
+            <button type="button"
+                    id="verEnvios"
+                    class="boton-secundario">
                 Ver historial de envíos
             </button>
 
-            <div
-                id="historial"
-                class="resultado"
-                aria-live="polite"
-            ></div>
+            <div id="historial"
+                 class="resultado"
+                 aria-live="polite">
+                Consulta los envíos realizados.
+            </div>
+        </section>
+
+        <!-- REPORTES -->
+
+        <section class="tarjeta">
+            <div class="icono">📈</div>
+            <h2>Reporte de participantes por fecha</h2>
+
+            <p class="descripcion">
+                Consulta inscritos, asistencias
+                y correos de una fecha determinada.
+                Exporta a Excel con hojas y celdas separadas.
+            </p>
+
+            <label for="fechaReporte">
+                Seleccionar fecha
+            </label>
+
+            <input type="date"
+                   id="fechaReporte">
+
+            <label for="modoReporte">
+                Tipo de reporte
+            </label>
+
+            <select id="modoReporte">
+                <option value="evento">
+                    Todos los inscritos del evento
+                </option>
+                <option value="actividad">
+                    Actividad registrada en esta fecha
+                </option>
+            </select>
+
+            <p class="descripcion">
+                "Todos los inscritos" incluye a quienes
+                ingresaron o faltaron en la fecha elegida.
+                "Actividad registrada" filtra los registros
+                y movimientos relacionados con ese día.
+            </p>
+
+            <button type="button"
+                    id="verReporte"
+                    class="boton-secundario">
+                Consultar estadísticas del día
+            </button>
+
+            <div id="resumenReporte"
+                 class="resultado"
+                 aria-live="polite">
+                Selecciona una fecha para consultar.
+            </div>
+
+            <button type="button" id="exportarExcel">
+                Descargar Excel completo
+            </button>
 
             <hr class="separador">
-
-            <!-- REPORTES -->
-
-
-<!-- ======================================= -->
-<!-- REPORTE DIARIO Y EXCEL DEL EVENTO        -->
-<!-- ======================================= -->
-
-<h2>Reporte de participantes por fecha</h2>
-
-<p class="descripcion">
-    Consulta los inscritos, asistencias y correos
-    de una fecha determinada. Descarga los datos
-    en un archivo Excel organizado por hojas.
-</p>
-
-<label for="fechaReporte">
-    Seleccionar fecha
-</label>
-
-<input
-    type="date"
-    id="fechaReporte"
-    required
->
-
-<label for="modoReporte">
-    Tipo de reporte
-</label>
-
-<select
-    id="modoReporte"
-    style="
-        width:100%;
-        padding:14px;
-        border:1px solid #bdc9da;
-        border-radius:10px;
-        font-size:16px;
-        background:white;
-    "
->
-    <option value="evento">
-        Todos los inscritos del evento
-    </option>
-
-    <option value="actividad">
-        Actividad registrada en esta fecha
-    </option>
-</select>
-
-<p class="descripcion">
-    "Todos los inscritos" permite comprobar
-    quién ingresó o faltó en la fecha seleccionada.
-
-    "Actividad registrada" muestra personas
-    registradas, ingresos o intentos de correo
-    relacionados con ese día.
-</p>
-
-<button
-    type="button"
-    id="verReporte"
-    class="boton-secundario"
->
-    Consultar estadísticas del día
-</button>
-
-<div
-    id="resumenReporte"
-    class="resultado"
-    aria-live="polite"
->
-    Selecciona una fecha y consulta el reporte.
-</div>
-
-<button
-    type="button"
-    id="exportarExcel"
->
-    Descargar Excel completo
-</button>
-
-<hr class="separador">
 
             <h2>Reportes de asistencia</h2>
 
             <p class="descripcion">
-                Descargar la lista de participantes
-                y su estado de ingreso.
+                Descarga el listado de participantes
+                con su estado de ingreso en CSV.
             </p>
 
-            <button
-                id="exportar"
-                class="boton-secundario"
-            >
+            <button type="button"
+                    id="exportar"
+                    class="boton-secundario">
                 Descargar asistencia CSV
             </button>
-
         </section>
 
         <!-- PARTICIPANTES -->
 
         <section class="tarjeta">
-
             <div class="icono">👥</div>
-
             <h2>Participantes registrados</h2>
 
             <p class="descripcion">
-                Aquí aparecerán los participantes
-                registrados en la base de datos.
+                Consulta a cada participante,
+                el estado de su correo,
+                su asistencia y las acciones disponibles.
             </p>
 
             <div id="listaParticipantes">
-
                 <p class="descripcion">
-                    Introduce la clave de administrador
-                    y pulsa "Ver participantes y estadísticas".
+                    Los participantes se cargarán al acceder.
                 </p>
-
             </div>
-
         </section>
 
-    </main>
-
-    <footer>
-        Sistema complementario de gestión de eventos
-        <br>
-        Proyecto independiente de control de asistencia
-    </footer>
-
-    <script>
-
-        // ELEMENTOS GENERALES
-
-        const $ = (id) => {
-            return document.getElementById(id);
-        };
-
-        function cabeceras() {
-            return {
-                "X-Admin-Key": $("clave").value
-            };
-        }
-
-        function errorAPI(datos) {
-            return typeof datos.detail === "string"
-                ? datos.detail
-                : "No se pudo completar la operación.";
-        }
-
-        // CONSULTAR PARTICIPANTES
-
-        async function cargar() {
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/participantes",
-                    {
-                        headers: cabeceras()
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                const estados = Object.entries(
-                    datos.envios || {}
-                ).map(([estado, cantidad]) => {
-                    return `${estado}: ${cantidad}`;
-                }).join(" · ");
-
-                $("resumen").textContent =
-                    `Inscritos: ${datos.total}\n` +
-                    `Asistieron: ${datos.asistieron}\n` +
-                    `Pendientes: ${datos.pendientes}\n\n` +
-                    `Correos: ${estados || "Sin envíos"}\n` +
-                    `Brevo: ${datos.brevo_configurado
-                        ? "Configurado"
-                        : "Sin configurar"}\n` +
-                    `Límite diario: ${datos.limite_diario}`;
-
-                const lista = $("listaParticipantes");
-
-                lista.replaceChildren();
-
-                for (const persona of datos.participantes) {
-
-                    const tarjeta = document.createElement("div");
-
-                    tarjeta.className = "participante";
-
-                    const nombre = document.createElement("h3");
-                    nombre.textContent = persona.nombre;
-
-                    tarjeta.append(nombre);
-
-                    function agregarDato(etiqueta, valor) {
-
-                        const p = document.createElement("p");
-
-                        p.textContent = `${etiqueta}: ${valor}`;
-
-                        tarjeta.append(p);
-                    }
-
-                    agregarDato(
-                        "Identificación",
-                        persona.cedula
-                    );
-
-                    agregarDato(
-                        "Correo",
-                        persona.email || "No registrado"
-                    );
-
-                    agregarDato(
-                        "Estado del correo",
-                        persona.email_estado || "pendiente"
-                    );
-
-                    const estado = document.createElement("span");
-
-                    estado.className =
-                        "estado " +
-                        (persona.asistio_en
-                            ? "ingreso"
-                            : "pendiente");
-
-                    estado.textContent = persona.asistio_en
-                        ? "Asistencia confirmada"
-                        : "Pendiente de ingreso";
-
-                    tarjeta.append(estado);
-
-                    const acciones = document.createElement("div");
-
-                    acciones.className = "acciones";
-
-                    function crearBoton(
-                        texto,
-                        accion,
-                        clase = "boton-secundario"
-                    ) {
-
-                        const boton = document.createElement("button");
-
-                        boton.textContent = texto;
-                        boton.className = clase;
-                        boton.onclick = accion;
-
-                        acciones.append(boton);
-
-                        return boton;
-                    }
-
-                    crearBoton(
-                        "Descargar QR",
-                        () => descargarQR(persona.id)
-                    );
-
-                    const enviar = crearBoton(
-                        "Enviar QR por correo",
-                        () => enviarCorreo(persona.id)
-                    );
-
-                    enviar.disabled = !persona.email;
-
-                    if (
-                        ["error", "rebotado"].includes(
-                            persona.email_estado
-                        )
-                    ) {
-                        crearBoton(
-                            "Reintentar correo fallido",
-                            () => reintentarCorreo(persona.id)
-                        );
-                    }
-
-                    if (persona.telefono) {
-
-                        crearBoton(
-                            "Contactar por WhatsApp",
-                            () => abrirWhatsApp(persona.id)
-                        );
-                    }
-
-                    if (
-                        !persona.asistio_en &&
-                        persona.email_estado === "pendiente" &&
-                        !persona.email_intentos
-                    ) {
-
-                        crearBoton(
-                            "Eliminar participante",
-                            () => eliminarPersona(persona),
-                            "boton-peligro"
-                        );
-                    }
-
-                    tarjeta.append(acciones);
-
-                    lista.append(tarjeta);
-                }
-
-                if (!datos.participantes.length) {
-
-                    lista.textContent =
-                        "Todavía no existen participantes registrados.";
-                }
-
-            } catch (error) {
-
-                $("resumen").textContent = error.message;
-            }
-        }
-
-        // DESCARGAR QR
-
-        async function descargarQR(id) {
-
-            try {
-
-                const respuesta = await fetch(
-                    `/api/qr/${id}`,
-                    {
-                        headers: cabeceras()
-                    }
-                );
-
-                if (!respuesta.ok) {
-                    throw new Error(
-                        errorAPI(await respuesta.json())
-                    );
-                }
-
-                const archivo = await respuesta.blob();
-
-                const url = URL.createObjectURL(archivo);
-
-                const enlace = document.createElement("a");
-
-                enlace.href = url;
-                enlace.download = `credencial_${id}.png`;
-
-                enlace.click();
-
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 5000);
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // ENVIAR CORREO INDIVIDUAL
-
-        async function enviarCorreo(id) {
-
-            if (!confirm("¿Enviar el código QR por correo?")) {
-                return;
-            }
-
-            try {
-
-                const respuesta = await fetch(
-                    `/api/enviar-correo/${id}`,
-                    {
-                        method: "POST",
-                        headers: cabeceras()
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                alert(datos.mensaje);
-
-                await cargar();
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // REINTENTAR CORREO
-
-        async function reintentarCorreo(id) {
-
-            if (!confirm("¿Reintentar este envío fallido?")) {
-                return;
-            }
-
-            try {
-
-                const respuesta = await fetch(
-                    `/api/reintentar-correo/${id}`,
-                    {
-                        method: "POST",
-                        headers: cabeceras()
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                alert(datos.mensaje);
-
-                await cargar();
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // WHATSAPP
-
-        async function abrirWhatsApp(id) {
-
-            try {
-
-                const respuesta = await fetch(
-                    `/api/whatsapp/${id}`,
-                    {
-                        headers: cabeceras()
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                window.open(
-                    datos.url,
-                    "_blank",
-                    "noopener,noreferrer"
-                );
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // SUBIR EXCEL
-
-        async function importarArchivo() {
-
-            const archivo = $("archivo").files[0];
-
-            if (!archivo) {
-                alert("Selecciona un Excel o CSV.");
-                return;
-            }
-
-            const formulario = new FormData();
-
-            formulario.append("archivo", archivo);
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/importar",
-                    {
-                        method: "POST",
-                        headers: cabeceras(),
-                        body: formulario
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                alert(
-                    `Importación completada.\n` +
-                    `Nuevos: ${datos.nuevos}\n` +
-                    `Actualizados: ${datos.actualizados}\n` +
-                    `Sin cambios: ${datos.existentes}\n` +
-                    `Protegidos: ${datos.protegidos}\n` +
-                    `Inválidos: ${datos.invalidos}`
-                );
-
-                await cargar();
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // BORRAR EJEMPLOS
-
-        async function borrarEjemplos() {
-
-            if (!confirm(
-                "¿Eliminar registros TEST sin envíos ni asistencias?"
-            )) {
-                return;
-            }
-
-            const codigo = prompt(
-                "Escribe ELIMINAR EJEMPLOS para confirmar"
-            );
-
-            if (codigo !== "ELIMINAR EJEMPLOS") {
-                return;
-            }
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/eliminar-ejemplos",
-                    {
-                        method: "POST",
-                        headers: {
-                            ...cabeceras(),
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            confirmacion: codigo
-                        })
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                alert(
-                    `Registros eliminados: ${datos.eliminados}`
-                );
-
-                await cargar();
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // ELIMINAR PARTICIPANTE
-
-        async function eliminarPersona(persona) {
-
-            const mensaje =
-                `¿Eliminar a ${persona.nombre}?\n` +
-                `Identificación: ${persona.cedula}`;
-
-            if (!confirm(mensaje)) {
-                return;
-            }
-
-            try {
-
-                const respuesta = await fetch(
-                    `/api/participantes/${persona.id}`,
-                    {
-                        method: "DELETE",
-                        headers: cabeceras()
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                alert("Participante eliminado.");
-
-                await cargar();
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // CONSULTAR IDENTIFICACION
-
-        async function consultarParticipante() {
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/consultar",
-                    {
-                        method: "POST",
-                        headers: {
-                            ...cabeceras(),
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            cedula: $("buscar").value.trim()
-                        })
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                $("consulta").textContent =
-                    `Nombre: ${datos.nombre}\n` +
-                    `Identificación: ${datos.cedula}\n` +
-                    `Estado: ${datos.asistio_en
-                        ? "Ingresó"
-                        : "Pendiente"}`;
-
-            } catch (error) {
-
-                $("consulta").textContent = error.message;
-            }
-        }
-
-        // ENVIO MASIVO
-
-        async function enviarPendientes() {
-
-            if (!confirm(
-                "¿Programar hasta 20 correos pendientes?"
-            )) {
-                return;
-            }
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/enviar-pendientes",
-                    {
-                        method: "POST",
-                        headers: {
-                            ...cabeceras(),
-                            "Content-Type": "application/json"
-                        },
-                        body: JSON.stringify({
-                            limite: 20
-                        })
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                alert(
-                    `Envíos programados: ${datos.programados}`
-                );
-
-                await cargar();
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
-
-        // HISTORIAL DE CORREOS
-
-        async function verHistorial() {
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/envios",
-                    {
-                        headers: cabeceras()
-                    }
-                );
-
-                const datos = await respuesta.json();
-
-                if (!respuesta.ok) {
-                    throw new Error(errorAPI(datos));
-                }
-
-                const envios = datos.envios || [];
-
-                $("historial").textContent = envios
-                    .slice(0, 30)
-                    .map((envio) => {
-
-                        return (
-                            `${envio.fecha_utc}\n` +
-                            `${envio.destinatario}\n` +
-                            `Estado: ${envio.estado}\n` +
-                            `${envio.detalle || ""}`
-                        );
-
-                    })
-                    .join("\n\n----------------\n\n");
-
-                if (!envios.length) {
-
-                    $("historial").textContent =
-                        "Todavía no existen envíos.";
-                }
-
-            } catch (error) {
-
-                $("historial").textContent = error.message;
-            }
-        }
-
-        // EXPORTAR ASISTENCIAS
-
-        async function exportarAsistencia() {
-
-            try {
-
-                const respuesta = await fetch(
-                    "/api/exportar-asistencia",
-                    {
-                        headers: cabeceras()
-                    }
-                );
-
-                if (!respuesta.ok) {
-                    throw new Error(
-                        errorAPI(await respuesta.json())
-                    );
-                }
-
-                const archivo = await respuesta.blob();
-
-                const url = URL.createObjectURL(archivo);
-
-                const enlace = document.createElement("a");
-
-                enlace.href = url;
-
-                enlace.download = "asistencia_ups.csv";
-
-                enlace.click();
-
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                }, 5000);
-
-            } catch (error) {
-
-                alert(error.message);
-            }
-        }
+        <section class="tarjeta">
+            <button type="button"
+                    id="volverAbajoAdmin"
+                    class="boton-volver">
+                ← Volver al inicio y cerrar sesión
+            </button>
+        </section>
+
+    </div>
+
+</main>
+
+<footer>
+    Sistema complementario de gestión de eventos
+    <br>
+    Proyecto independiente de control de asistencia
+</footer>
+
+<script>
+"use strict";
 
 // ==========================================
-// REPORTES DIARIOS Y DESCARGA EXCEL
+// HERRAMIENTAS GENERALES
 // ==========================================
 
-// Fecha actual de Ecuador.
-$("fechaReporte").value =
-    new Date().toLocaleDateString(
-        "sv-SE",
-        { timeZone: "America/Guayaquil" }
-    );
-
-// Obtener la fecha y modalidad.
-function parametrosReporte() {
-
-    const fecha = $("fechaReporte").value;
-
-    const modo = $("modoReporte").value;
-
-    if (!fecha) {
-        throw new Error("Selecciona una fecha.");
-    }
-
-    return new URLSearchParams({
-        fecha: fecha,
-        modo: modo
-    });
-}
-
-// Consultar resumen.
-async function consultarReporteDiario() {
-
-    try {
-
-        const parametros = parametrosReporte();
-
-        const respuesta = await fetch(
-            "/api/reporte-dia?" + parametros.toString(),
-            {
-                headers: cabeceras()
-            }
-        );
-
-        const datos = await respuesta.json();
-
-        if (!respuesta.ok) {
-            throw new Error(
-                errorAPI(datos)
-            );
-        }
-
-        const estados = Object.entries(
-            datos.estados_intentos_correo || {}
-        ).map(([estado, cantidad]) => {
-            return `${estado}: ${cantidad}`;
-        }).join("\n");
-
-        $("resumenReporte").textContent =
-            `Fecha: ${datos.fecha}\n` +
-            `Total: ${datos.personas}\n` +
-            `Ingresaron: ${datos.ingresaron_ese_dia}\n` +
-            `No ingresaron: ${datos.no_ingresaron_ese_dia}\n` +
-            `Registro rápido: ${datos.registro_rapido}\n` +
-            `Importación: ${datos.importacion}\n` +
-            `Intentos de correo: ${datos.intentos_correo}\n\n` +
-            `Estados:\n${estados || "Sin intentos"}`;
-
-    } catch (error) {
-
-        $("resumenReporte").textContent =
-            error.message;
-    }
-}
-
-// Exportar archivo Excel XLSX.
-async function descargarReporteExcel() {
-
-    try {
-
-        const parametros = parametrosReporte();
-
-        const respuesta = await fetch(
-            "/api/exportar-excel?" + parametros.toString(),
-            {
-                headers: cabeceras()
-            }
-        );
-
-        if (!respuesta.ok) {
-
-            const datos = await respuesta.json();
-
-            throw new Error(
-                errorAPI(datos)
-            );
-        }
-
-        const archivo = await respuesta.blob();
-
-        const url = URL.createObjectURL(archivo);
-
-        const enlace = document.createElement("a");
-
-        enlace.href = url;
-
-        enlace.download =
-            `evento_ups_${$("fechaReporte").value}.xlsx`;
-
-        document.body.appendChild(enlace);
-
-        enlace.click();
-
-        enlace.remove();
-
-        setTimeout(() => {
-            URL.revokeObjectURL(url);
-        }, 5000);
-
-    } catch (error) {
-
-        alert(error.message);
-    }
-}
-
-// Activar botones.
-$("verReporte").onclick = consultarReporteDiario;
-
-$("exportarExcel").onclick = descargarReporteExcel;
-
-        
-        // CONECTAR BOTONES
-
-        $("cargar").onclick = cargar;
-
-        $("importar").onclick = importarArchivo;
-
-        $("borrarEjemplos").onclick = borrarEjemplos;
-
-        $("consultar").onclick = consultarParticipante;
-
-        $("envioMasivo").onclick = enviarPendientes;
-
-        $("verEnvios").onclick = verHistorial;
-
-        $("exportar").onclick = exportarAsistencia;
-
-
-// ==================================================
-// NUEVO HISTORIAL DE IMPORTACIONES UPS
-// ==================================================
+const $ = id => document.getElementById(id);
 
 let archivoAnalizado = null;
+let administradorActivo = false;
+let generacionSesion = 0;
 
-async function consultarImportaciones(url, opciones = {}) {
+function cabeceras() {
+    return {
+        "X-Admin-Key": $("clave").value
+    };
+}
+
+function errorAPI(datos) {
+    if (typeof datos.detail === "string") {
+        return datos.detail;
+    }
+    return "No se pudo completar la operación.";
+}
+
+function mensaje(id, texto) {
+    $(id).textContent = texto;
+}
+
+async function peticion(url, opciones = {}) {
     const respuesta = await fetch(url, {
         ...opciones,
+        cache: "no-store",
         headers: {
             ...cabeceras(),
             ...(opciones.headers || {})
@@ -1554,140 +822,31 @@ async function consultarImportaciones(url, opciones = {}) {
 
     if (!respuesta.ok) {
         const error = await respuesta.json().catch(() => ({}));
-        throw new Error(
-            error.detail || "No se pudo completar la operación."
-        );
+        throw new Error(errorAPI(error));
     }
 
-    return respuesta.json();
+    return respuesta;
 }
 
+async function jsonAPI(url, opciones = {}) {
+    return (await peticion(url, opciones)).json();
+}
 
-// ANALIZAR EXCEL SIN GUARDAR PARTICIPANTES
-$("importar").onclick = async () => {
-    const archivo = $("archivo").files[0];
+function boton(texto, accion, clase = "boton-secundario") {
+    const elemento = document.createElement("button");
+    elemento.type = "button";
+    elemento.className = clase;
+    elemento.textContent = texto;
+    elemento.onclick = accion;
+    return elemento;
+}
 
-    if (!archivo) {
-        alert("Selecciona un archivo Excel o CSV.");
-        return;
-    }
-
-    archivoAnalizado = null;
-    $("confirmarImportacion").disabled = true;
-    $("resultadoAnalisis").textContent =
-        "Analizando el archivo. Todavía no se guarda nada.";
-
-    const formulario = new FormData();
-    formulario.append("archivo", archivo);
-
-    try {
-        const datos = await consultarImportaciones(
-            "/api/importaciones/analizar",
-            {
-                method: "POST",
-                body: formulario
-            }
-        );
-
-        $("resultadoAnalisis").textContent =
-            `Archivo: ${datos.archivo}\n` +
-            `Total de filas: ${datos.filas}\n` +
-            `Nuevos: ${datos.nuevos}\n` +
-            `Ya existentes: ${datos.existentes}\n` +
-            `Repetidos dentro del archivo: ${datos.repetidos}\n` +
-            `Posibles duplicados por correo: ${datos.conflictos}\n` +
-            `Inválidos: ${datos.invalidos}\n\n` +
-            (datos.ya_importado
-                ? "Este archivo ya fue importado anteriormente."
-                : "Revisa los resultados antes de confirmar.");
-
-        if (!datos.ya_importado && datos.nuevos > 0) {
-            archivoAnalizado = datos.sha256;
-            $("confirmarImportacion").disabled = false;
-        }
-
-    } catch (error) {
-        $("resultadoAnalisis").textContent = error.message;
-    }
-};
-
-
-// SI CAMBIAS EL ARCHIVO, DEBES ANALIZAR OTRA VEZ
-$("archivo").addEventListener("change", () => {
-    archivoAnalizado = null;
-    $("confirmarImportacion").disabled = true;
-    $("resultadoAnalisis").textContent =
-        "Archivo seleccionado. Pulsa Analizar archivo.";
-});
-
-
-// CONFIRMAR IMPORTACIÓN
-$("confirmarImportacion").onclick = async () => {
-    const archivo = $("archivo").files[0];
-
-    if (!archivo || !archivoAnalizado) {
-        alert("Primero analiza un archivo.");
-        return;
-    }
-
-    if (!confirm(
-        "¿Agregar únicamente los participantes nuevos?"
-    )) {
-        return;
-    }
-
-    $("confirmarImportacion").disabled = true;
-
-    const formulario = new FormData();
-    formulario.append("archivo", archivo);
-
-    try {
-        const datos = await consultarImportaciones(
-            "/api/importaciones/confirmar?sha256=" +
-                encodeURIComponent(archivoAnalizado),
-            {
-                method: "POST",
-                body: formulario
-            }
-        );
-
-        archivoAnalizado = null;
-
-        $("resultadoAnalisis").textContent =
-            `Importación #${datos.importacion_id} completada.\n` +
-            `Nuevos agregados: ${datos.nuevos}\n` +
-            `Ya existentes: ${datos.existentes}\n` +
-            `Repetidos: ${datos.repetidos}\n` +
-            `Conflictos: ${datos.conflictos}\n` +
-            `Inválidos: ${datos.invalidos}`;
-
-        await cargar();
-        await verHistorialImportaciones();
-
-    } catch (error) {
-        $("resultadoAnalisis").textContent = error.message;
-    }
-};
-
-
-// DESCARGAR EXCEL O CSV CON AUTORIZACIÓN
-async function descargarNuevos(id, formato) {
-    const respuesta = await fetch(
-        `/api/importaciones/${id}/nuevos?formato=${formato}`,
-        { headers: cabeceras() }
-    );
-
-    if (!respuesta.ok) {
-        const error = await respuesta.json().catch(() => ({}));
-        throw new Error(error.detail || "No se pudo descargar.");
-    }
-
-    const url = URL.createObjectURL(await respuesta.blob());
-
+function descargarBlob(blob, nombre) {
+    const url = URL.createObjectURL(blob);
     const enlace = document.createElement("a");
-    enlace.href = url;
-    enlace.download = `ups_carga_${id}_nuevos.${formato}`;
 
+    enlace.href = url;
+    enlace.download = nombre;
     document.body.appendChild(enlace);
     enlace.click();
     enlace.remove();
@@ -1695,58 +854,599 @@ async function descargarNuevos(id, formato) {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-
-// CREAR BOTONES SIN INYECTAR HTML
-function crearBoton(texto, accion, clase = "boton-secundario") {
-    const boton = document.createElement("button");
-    boton.type = "button";
-    boton.textContent = texto;
-    boton.className = clase;
-    boton.onclick = accion;
-    return boton;
+async function descargarAutorizado(url, nombre) {
+    const respuesta = await peticion(url);
+    descargarBlob(await respuesta.blob(), nombre);
 }
 
+// ==========================================
+// ACCESO Y NAVEGACION
+// ==========================================
 
-// CONSULTAR HISTORIAL DE ARCHIVOS
+$("mostrarAccesoAdmin").onclick = () => {
+    $("formularioAccesoAdmin").hidden = false;
+    $("mostrarAccesoAdmin").hidden = true;
+    $("clave").focus();
+};
+
+$("cancelarAccesoAdmin").onclick = () => {
+    $("clave").value = "";
+    $("formularioAccesoAdmin").hidden = true;
+    $("mostrarAccesoAdmin").hidden = false;
+    mensaje("mensajeAccesoAdmin", "Acceso cancelado.");
+};
+
+async function entrarOrganizador() {
+    const clave = $("clave").value;
+
+    if (!clave.trim()) {
+        mensaje("mensajeAccesoAdmin", "Escribe tu contraseña.");
+        return;
+    }
+
+    const btn = $("iniciarSesionAdmin");
+    btn.disabled = true;
+    mensaje("mensajeAccesoAdmin", "Verificando contraseña...");
+
+    try {
+        // Comprobar la contraseña en FastAPI,
+        // no simplemente en JavaScript.
+        const respuesta = await fetch("/api/participantes", {
+            headers: { "X-Admin-Key": clave },
+            cache: "no-store"
+        });
+
+        if (!respuesta.ok) {
+            throw new Error(
+                "Contraseña incorrecta o QR_ADMIN_KEY no configurada."
+            );
+        }
+
+        const datos = await respuesta.json();
+
+        administradorActivo = true;
+        generacionSesion++;
+
+        $("vistaPublica").hidden = true;
+        $("vistaOrganizador").hidden = false;
+
+        // Utiliza los datos ya autorizados.
+        mostrarParticipantes(datos);
+        window.scrollTo(0, 0);
+
+    } catch (error) {
+        mensaje("mensajeAccesoAdmin", error.message);
+
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+$("iniciarSesionAdmin").onclick = entrarOrganizador;
+
+$("clave").addEventListener("keydown", evento => {
+    if (evento.key === "Enter") {
+        evento.preventDefault();
+        entrarOrganizador();
+    }
+});
+
+function salirOrganizador() {
+    administradorActivo = false;
+    generacionSesion++;
+
+    $("clave").value = "";
+
+    $("vistaOrganizador").hidden = true;
+    $("vistaPublica").hidden = false;
+    $("formularioAccesoAdmin").hidden = true;
+    $("mostrarAccesoAdmin").hidden = false;
+
+    $("listaParticipantes").replaceChildren();
+
+    mensaje("resumen", "Sesión cerrada.");
+    mensaje("historial", "");
+    mensaje("consulta", "");
+    mensaje("resumenReporte", "Selecciona una fecha.");
+    mensaje("historialImportaciones", "Consulta el historial.");
+    mensaje("listaAnteriores", "Consulta los registros anteriores.");
+    mensaje("resultadoAnalisis", "Selecciona un archivo.");
+    mensaje("mensajeAccesoAdmin", "Introduce tu clave.");
+
+    $("archivo").value = "";
+    archivoAnalizado = null;
+    $("confirmarImportacion").disabled = true;
+
+    window.scrollTo(0, 0);
+}
+
+$("volverInicioAdmin").onclick = salirOrganizador;
+$("volverAbajoAdmin").onclick = salirOrganizador;
+
+// ==========================================
+// PARTICIPANTES Y ESTADISTICAS
+// ==========================================
+
+function mostrarParticipantes(datos) {
+    const estados = Object.entries(datos.envios || {})
+        .map(([estado, total]) => `${estado}: ${total}`)
+        .join(" · ");
+
+    mensaje(
+        "resumen",
+        `Inscritos: ${datos.total}\n` +
+        `Asistieron: ${datos.asistieron}\n` +
+        `Pendientes: ${datos.pendientes}\n\n` +
+        `Correos: ${estados || "Sin envíos"}\n` +
+        `Brevo: ${datos.brevo_configurado
+            ? "Configurado" : "Sin configurar"}\n` +
+        `Límite diario: ${datos.limite_diario}`
+    );
+
+    const lista = $("listaParticipantes");
+    lista.replaceChildren();
+
+    for (const persona of datos.participantes || []) {
+        const tarjeta = document.createElement("div");
+        tarjeta.className = "participante";
+
+        const titulo = document.createElement("h3");
+        titulo.textContent = persona.nombre;
+        tarjeta.appendChild(titulo);
+
+        function dato(etiqueta, valor) {
+            const p = document.createElement("p");
+            p.textContent = `${etiqueta}: ${valor || "—"}`;
+            tarjeta.appendChild(p);
+        }
+
+        dato("Identificación", persona.cedula);
+        dato("Correo", persona.email);
+        dato("Tipo", persona.tipo);
+        dato("Estado del correo", persona.email_estado);
+
+        const estado = document.createElement("span");
+        estado.className = persona.asistio_en
+            ? "estado ingreso" : "estado";
+
+        estado.textContent = persona.asistio_en
+            ? "Asistencia confirmada"
+            : "Pendiente de ingreso";
+
+        tarjeta.appendChild(estado);
+
+        const acciones = document.createElement("div");
+        acciones.className = "acciones";
+
+        acciones.appendChild(boton(
+            "Descargar QR",
+            () => descargarQR(persona.id)
+        ));
+
+        const enviar = boton(
+            "Enviar QR por correo",
+            () => enviarCorreo(persona.id)
+        );
+
+        enviar.disabled = (
+            !persona.email ||
+            persona.email_estado !== "pendiente"
+        );
+        acciones.appendChild(enviar);
+
+        if (["error", "rebotado"].includes(persona.email_estado)) {
+            acciones.appendChild(boton(
+                "Reintentar correo fallido",
+                () => reintentarCorreo(persona.id)
+            ));
+        }
+
+        if (persona.telefono) {
+            acciones.appendChild(boton(
+                "Contactar por WhatsApp",
+                () => abrirWhatsApp(persona.id)
+            ));
+        }
+
+        if (
+            !persona.asistio_en &&
+            persona.email_estado === "pendiente" &&
+            !persona.email_intentos
+        ) {
+            acciones.appendChild(boton(
+                "Eliminar participante",
+                () => eliminarPersona(persona),
+                "boton-peligro"
+            ));
+        }
+
+        tarjeta.appendChild(acciones);
+        lista.appendChild(tarjeta);
+    }
+
+    if (!datos.participantes?.length) {
+        lista.textContent = "Todavía no hay participantes.";
+    }
+}
+
+async function cargar() {
+    const sesion = generacionSesion;
+
+    try {
+        const datos = await jsonAPI("/api/participantes");
+
+        if (!administradorActivo || sesion !== generacionSesion) {
+            return;
+        }
+
+        mostrarParticipantes(datos);
+
+    } catch (error) {
+        if (administradorActivo) {
+            mensaje("resumen", error.message);
+        }
+    }
+}
+
+$("cargar").onclick = cargar;
+
+async function descargarQR(id) {
+    try {
+        await descargarAutorizado(
+            `/api/qr/${id}`,
+            `credencial_${id}.png`
+        );
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function enviarCorreo(id) {
+    if (!confirm("¿Enviar la credencial QR a esta persona?")) {
+        return;
+    }
+
+    try {
+        const datos = await jsonAPI(
+            `/api/enviar-correo/${id}`,
+            { method: "POST" }
+        );
+
+        alert(datos.mensaje);
+        await cargar();
+
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function reintentarCorreo(id) {
+    if (!confirm("¿Reintentar el correo fallido?")) {
+        return;
+    }
+
+    try {
+        const datos = await jsonAPI(
+            `/api/reintentar-correo/${id}`,
+            { method: "POST" }
+        );
+
+        alert(datos.mensaje);
+        await cargar();
+
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function abrirWhatsApp(id) {
+    try {
+        const datos = await jsonAPI(`/api/whatsapp/${id}`);
+
+        window.open(
+            datos.url,
+            "_blank",
+            "noopener,noreferrer"
+        );
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+async function eliminarPersona(persona) {
+    if (!confirm(
+        `¿Eliminar a ${persona.nombre}?\n` +
+        `Identificación: ${persona.cedula}`
+    )) {
+        return;
+    }
+
+    try {
+        await jsonAPI(
+            `/api/participantes/${persona.id}`,
+            { method: "DELETE" }
+        );
+
+        alert("Participante eliminado.");
+        await cargar();
+
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+// ==========================================
+// CONSULTAR PARTICIPANTE
+// ==========================================
+
+$("consultar").onclick = async () => {
+    const cedula = $("buscar").value.trim();
+
+    if (!cedula) {
+        mensaje("consulta", "Introduce la identificación.");
+        return;
+    }
+
+    try {
+        const datos = await jsonAPI("/api/consultar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cedula })
+        });
+
+        mensaje(
+            "consulta",
+            `Nombre: ${datos.nombre}\n` +
+            `Identificación: ${datos.cedula}\n` +
+            `Asistencia: ${datos.asistio_en
+                ? "Ingresó" : "Pendiente"}`
+        );
+
+    } catch (error) {
+        mensaje("consulta", error.message);
+    }
+};
+
+// ==========================================
+// CORREOS BREVO
+// ==========================================
+
+$("envioMasivo").onclick = async () => {
+    if (!confirm(
+        "¿Programar hasta 20 correos pendientes? " +
+        "Los ya enviados no se procesarán de nuevo."
+    )) {
+        return;
+    }
+
+    try {
+        const datos = await jsonAPI("/api/enviar-pendientes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ limite: 20 })
+        });
+
+        alert(
+            `Envíos programados: ${datos.programados}\n` +
+            "Programado no significa entregado."
+        );
+
+        await cargar();
+
+    } catch (error) {
+        alert(error.message);
+    }
+};
+
+$("verEnvios").onclick = async () => {
+    try {
+        const datos = await jsonAPI("/api/envios");
+        const envios = datos.envios || [];
+
+        mensaje(
+            "historial",
+            envios.slice(0, 30).map(e =>
+                `${e.fecha_utc}\n` +
+                `${e.destinatario}\n` +
+                `Estado: ${e.estado}\n` +
+                `${e.detalle || ""}`
+            ).join("\n\n------------------\n\n") ||
+            "Todavía no hay envíos."
+        );
+
+    } catch (error) {
+        mensaje("historial", error.message);
+    }
+};
+
+// ==========================================
+// BORRAR SOLO REGISTROS TEST
+// ==========================================
+
+$("borrarEjemplos").onclick = async () => {
+    if (!confirm(
+        "Esta función solo elimina documentos TEST " +
+        "sin correos ni asistencia. ¿Continuar?"
+    )) {
+        return;
+    }
+
+    const confirmacion = prompt(
+        "Escribe ELIMINAR EJEMPLOS para continuar"
+    );
+
+    if (confirmacion !== "ELIMINAR EJEMPLOS") {
+        return;
+    }
+
+    try {
+        const datos = await jsonAPI("/api/eliminar-ejemplos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirmacion })
+        });
+
+        alert(`Eliminados: ${datos.eliminados}`);
+        await cargar();
+
+    } catch (error) {
+        alert(error.message);
+    }
+};
+
+// ==========================================
+// IMPORTAR EXCEL O CSV
+// ==========================================
+
+async function analizarArchivo() {
+    const archivo = $("archivo").files[0];
+
+    if (!archivo) {
+        alert("Selecciona un Excel o CSV.");
+        return;
+    }
+
+    archivoAnalizado = null;
+    $("confirmarImportacion").disabled = true;
+
+    mensaje("resultadoAnalisis", "Analizando sin guardar...");
+
+    const formulario = new FormData();
+    formulario.append("archivo", archivo);
+
+    try {
+        const datos = await jsonAPI(
+            "/api/importaciones/analizar",
+            { method: "POST", body: formulario }
+        );
+
+        mensaje(
+            "resultadoAnalisis",
+            `Archivo: ${datos.archivo}\n` +
+            `Filas: ${datos.filas}\n` +
+            `Nuevos: ${datos.nuevos}\n` +
+            `Existentes: ${datos.existentes}\n` +
+            `Repetidos en el archivo: ${datos.repetidos}\n` +
+            `Conflictos por correo: ${datos.conflictos}\n` +
+            `Inválidos: ${datos.invalidos}\n\n` +
+            (datos.ya_importado
+                ? "Este archivo ya se importó anteriormente."
+                : "Comprueba los resultados antes de confirmar.")
+        );
+
+        if (!datos.ya_importado && datos.nuevos > 0) {
+            archivoAnalizado = datos.sha256;
+            $("confirmarImportacion").disabled = false;
+        }
+
+    } catch (error) {
+        mensaje("resultadoAnalisis", error.message);
+    }
+}
+
+$("importar").onclick = analizarArchivo;
+
+$("archivo").addEventListener("change", () => {
+    archivoAnalizado = null;
+    $("confirmarImportacion").disabled = true;
+
+    mensaje(
+        "resultadoAnalisis",
+        "Archivo seleccionado. Pulsa Analizar archivo."
+    );
+});
+
+$("confirmarImportacion").onclick = async () => {
+    const archivo = $("archivo").files[0];
+
+    if (!archivo || !archivoAnalizado) {
+        alert("Primero analiza el archivo.");
+        return;
+    }
+
+    if (!confirm("¿Agregar únicamente los participantes nuevos?")) {
+        return;
+    }
+
+    $("confirmarImportacion").disabled = true;
+
+    const formulario = new FormData();
+    formulario.append("archivo", archivo);
+
+    try {
+        const datos = await jsonAPI(
+            "/api/importaciones/confirmar?sha256=" +
+            encodeURIComponent(archivoAnalizado),
+            { method: "POST", body: formulario }
+        );
+
+        archivoAnalizado = null;
+
+        mensaje(
+            "resultadoAnalisis",
+            `Carga #${datos.importacion_id} completada.\n` +
+            `Nuevos agregados: ${datos.nuevos}\n` +
+            `Existentes: ${datos.existentes}\n` +
+            `Repetidos: ${datos.repetidos}\n` +
+            `Conflictos: ${datos.conflictos}\n` +
+            `Inválidos: ${datos.invalidos}`
+        );
+
+        await cargar();
+        await verHistorialImportaciones();
+
+    } catch (error) {
+        mensaje("resultadoAnalisis", error.message);
+    }
+};
+
+// ==========================================
+// HISTORIAL DE IMPORTACIONES
+// ==========================================
+
+async function descargarNuevos(id, formato) {
+    await descargarAutorizado(
+        `/api/importaciones/${id}/nuevos?formato=${formato}`,
+        `ups_carga_${id}_nuevos.${formato}`
+    );
+}
+
 async function verHistorialImportaciones() {
+    const sesion = generacionSesion;
     const contenedor = $("historialImportaciones");
 
     contenedor.replaceChildren();
-    contenedor.textContent = "Consultando importaciones...";
+    contenedor.textContent = "Consultando cargas...";
 
     try {
-        const datos = await consultarImportaciones(
-            "/api/importaciones"
-        );
+        const datos = await jsonAPI("/api/importaciones");
+
+        if (!administradorActivo || sesion !== generacionSesion) {
+            return;
+        }
 
         contenedor.replaceChildren();
 
-        if (!datos.importaciones.length) {
+        if (!datos.importaciones?.length) {
             contenedor.textContent =
-                "Todavía no existen archivos con historial. " +
-                "Consulta los registros anteriores más abajo.";
+                "Todavía no hay archivos con historial. " +
+                "Puedes consultar los registros antiguos más abajo.";
             return;
         }
 
         for (const lote of datos.importaciones) {
             const tarjeta = document.createElement("div");
+            tarjeta.className = "lote";
 
-            tarjeta.style.cssText =
-                "padding:15px;margin:12px 0;" +
-                "background:#eef3f9;color:#132647;" +
-                "border-radius:12px;";
+            const titulo = document.createElement("h3");
+            titulo.textContent = `Carga #${lote.id}: ${lote.archivo}`;
 
-            const titulo = document.createElement("p");
-            titulo.style.fontWeight = "bold";
-            titulo.textContent =
-                `Carga #${lote.id}: ${lote.archivo}`;
-
-            const informacion = document.createElement("p");
-            informacion.style.whiteSpace = "pre-line";
-            informacion.textContent =
+            const resumen = document.createElement("p");
+            resumen.style.whiteSpace = "pre-line";
+            resumen.textContent =
                 `Fecha: ${lote.creada_en}\n` +
                 `Estado: ${lote.estado}\n` +
-                `Filas procesadas: ${lote.total}\n` +
+                `Filas: ${lote.total}\n` +
                 `Nuevos: ${lote.nuevos}\n` +
                 `Existentes: ${lote.existentes}\n` +
                 `Repetidos: ${lote.repetidos}\n` +
@@ -1754,106 +1454,54 @@ async function verHistorialImportaciones() {
                 `Inválidos: ${lote.invalidos}\n` +
                 `Eliminados al deshacer: ${lote.eliminados}`;
 
-            tarjeta.append(titulo, informacion);
+            tarjeta.append(titulo, resumen);
 
-            tarjeta.appendChild(crearBoton(
+            tarjeta.appendChild(boton(
                 "Ver detalles",
                 async () => {
                     try {
-                        const datos = await consultarImportaciones(
+                        const datos = await jsonAPI(
                             `/api/importaciones/${lote.id}`
                         );
 
-                        alert(
-                            datos.detalles.map(p =>
-                                `Fila ${p.fila} | ` +
-                                `${p.documento} | ${p.accion}`
-                            ).join("\n").slice(0, 15000)
-                        );
+                        const panel = document.createElement("details");
+                        panel.open = true;
+
+                        const encabezado = document.createElement("summary");
+                        encabezado.textContent = "Filas procesadas";
+
+                        const texto = document.createElement("div");
+                        texto.className = "resultado";
+
+                        texto.textContent = datos.detalles.map(d =>
+                            `Fila ${d.fila}: ${d.documento} — ${d.accion}`
+                        ).join("\n");
+
+                        panel.append(encabezado, texto);
+                        tarjeta.append(panel);
+
                     } catch (error) {
                         alert(error.message);
                     }
                 }
             ));
 
-            tarjeta.appendChild(crearBoton(
+            tarjeta.appendChild(boton(
                 "Descargar solo nuevos (Excel)",
-                async () => {
-                    try {
-                        await descargarNuevos(lote.id, "xlsx");
-                    } catch (error) {
-                        alert(error.message);
-                    }
-                }
+                () => descargarNuevos(lote.id, "xlsx")
+                    .catch(e => alert(e.message))
             ));
 
-            tarjeta.appendChild(crearBoton(
+            tarjeta.appendChild(boton(
                 "Descargar solo nuevos (CSV)",
-                async () => {
-                    try {
-                        await descargarNuevos(lote.id, "csv");
-                    } catch (error) {
-                        alert(error.message);
-                    }
-                }
+                () => descargarNuevos(lote.id, "csv")
+                    .catch(e => alert(e.message))
             ));
 
             if (lote.estado === "completada") {
-                tarjeta.appendChild(crearBoton(
-                    "Simular / Deshacer importación",
-                    async () => {
-                        try {
-                            const simulacion =
-                                await consultarImportaciones(
-                                    `/api/importaciones/${lote.id}/simular`
-                                );
-
-                            const mensaje =
-                                `Archivo: ${lote.archivo}\n\n` +
-                                `Se podrían eliminar: ` +
-                                `${simulacion.eliminables}\n` +
-                                `Protegidos: ` +
-                                `${simulacion.protegidos}\n\n` +
-                                "Los participantes anteriores, " +
-                                "sus QR y correos se conservarán.\n\n" +
-                                "¿Deseas continuar?";
-
-                            if (!confirm(mensaje)) return;
-
-                            const frase = `DESHACER ${lote.id}`;
-
-                            const entrada = prompt(
-                                `Escribe exactamente: ${frase}`
-                            );
-
-                            if (entrada !== frase) return;
-
-                            const resultado =
-                                await consultarImportaciones(
-                                    `/api/importaciones/${lote.id}/deshacer`,
-                                    {
-                                        method: "POST",
-                                        headers: {
-                                            "Content-Type": "application/json"
-                                        },
-                                        body: JSON.stringify({
-                                            confirmacion: frase
-                                        })
-                                    }
-                                );
-
-                            alert(
-                                `Eliminados: ${resultado.eliminados}\n` +
-                                `Protegidos: ${resultado.protegidos}`
-                            );
-
-                            await verHistorialImportaciones();
-                            await cargar();
-
-                        } catch (error) {
-                            alert(error.message);
-                        }
-                    },
+                tarjeta.appendChild(boton(
+                    "Simular / Deshacer esta carga",
+                    () => deshacerImportacion(lote),
                     "boton-peligro"
                 ));
             }
@@ -1862,26 +1510,78 @@ async function verHistorialImportaciones() {
         }
 
     } catch (error) {
-        contenedor.textContent = error.message;
+        if (administradorActivo) {
+            contenedor.textContent = error.message;
+        }
     }
 }
 
 $("verHistorialImportaciones").onclick =
     verHistorialImportaciones;
 
+async function deshacerImportacion(lote) {
+    try {
+        const simulacion = await jsonAPI(
+            `/api/importaciones/${lote.id}/simular`
+        );
 
-// VER PARTICIPANTES QUE YA EXISTÍAN ANTES
+        if (!confirm(
+            `Archivo: ${lote.archivo}\n` +
+            `Registros eliminables: ${simulacion.eliminables}\n` +
+            `Registros protegidos: ${simulacion.protegidos}\n\n` +
+            "Los registros con envíos y asistencias " +
+            "no se borrarán automáticamente.\n\n" +
+            "¿Continuar?"
+        )) {
+            return;
+        }
+
+        const frase = `DESHACER ${lote.id}`;
+        const confirmacion = prompt(`Escribe: ${frase}`);
+
+        if (confirmacion !== frase) return;
+
+        const datos = await jsonAPI(
+            `/api/importaciones/${lote.id}/deshacer`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ confirmacion })
+            }
+        );
+
+        alert(
+            `Eliminados: ${datos.eliminados}\n` +
+            `Protegidos: ${datos.protegidos}`
+        );
+
+        await verHistorialImportaciones();
+        await cargar();
+
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+// ==========================================
+// REGISTROS HISTORICOS ANTERIORES
+// ==========================================
+
 $("verAnteriores").onclick = async () => {
+    const sesion = generacionSesion;
     const contenedor = $("listaAnteriores");
 
     contenedor.replaceChildren();
-    contenedor.textContent =
-        "Consultando participantes anteriores...";
+    contenedor.textContent = "Consultando registros anteriores...";
 
     try {
-        const datos = await consultarImportaciones(
+        const datos = await jsonAPI(
             "/api/importaciones/anteriores"
         );
+
+        if (!administradorActivo || sesion !== generacionSesion) {
+            return;
+        }
 
         contenedor.replaceChildren();
 
@@ -1893,34 +1593,111 @@ $("verAnteriores").onclick = async () => {
 
         for (const grupo of datos.grupos) {
             const bloque = document.createElement("details");
+            bloque.className = "grupo-historico";
 
             const encabezado = document.createElement("summary");
             encabezado.textContent =
                 `${grupo.hora} — ${grupo.cantidad} participantes`;
 
-            const contenido = document.createElement("p");
-            contenido.style.whiteSpace = "pre-line";
+            const contenido = document.createElement("div");
+            contenido.className = "resultado";
 
-            contenido.textContent = grupo.participantes
-                .map(p =>
-                    `ID: ${p.id} | ${p.nombre} | ` +
-                    `${p.cedula} | ${p.email_estado} | ` +
-                    (p.asistio ? "Ingresó" : "Sin ingreso")
-                )
-                .join("\n");
+            contenido.textContent = grupo.participantes.map(p =>
+                `ID ${p.id} | ${p.nombre} | ` +
+                `${p.cedula} | ${p.email_estado} | ` +
+                (p.asistio ? "Ingresó" : "Sin ingreso")
+            ).join("\n");
 
             bloque.append(encabezado, contenido);
             contenedor.appendChild(bloque);
         }
 
     } catch (error) {
-        contenedor.textContent = error.message;
+        if (administradorActivo) {
+            contenedor.textContent = error.message;
+        }
     }
 };
 
+// ==========================================
+// REPORTES POR FECHA
+// ==========================================
 
-    </script>
+$("fechaReporte").value = new Date().toLocaleDateString(
+    "sv-SE",
+    { timeZone: "America/Guayaquil" }
+);
 
+function parametrosReporte() {
+    const fecha = $("fechaReporte").value;
+
+    if (!fecha) {
+        throw new Error("Selecciona una fecha.");
+    }
+
+    return new URLSearchParams({
+        fecha,
+        modo: $("modoReporte").value
+    });
+}
+
+$("verReporte").onclick = async () => {
+    try {
+        const parametros = parametrosReporte();
+
+        const datos = await jsonAPI(
+            "/api/reporte-dia?" + parametros.toString()
+        );
+
+        const estados = Object.entries(
+            datos.estados_intentos_correo || {}
+        ).map(([estado, total]) =>
+            `${estado}: ${total}`
+        ).join("\n");
+
+        mensaje(
+            "resumenReporte",
+            `Fecha: ${datos.fecha}\n` +
+            `Participantes: ${datos.personas}\n` +
+            `Ingresaron: ${datos.ingresaron_ese_dia}\n` +
+            `No ingresaron: ${datos.no_ingresaron_ese_dia}\n` +
+            `Registro rápido: ${datos.registro_rapido}\n` +
+            `Otros registros: ${datos.importacion}\n` +
+            `Intentos de correo: ${datos.intentos_correo}\n\n` +
+            `Estados:\n${estados || "Sin intentos"}`
+        );
+
+    } catch (error) {
+        mensaje("resumenReporte", error.message);
+    }
+};
+
+$("exportarExcel").onclick = async () => {
+    try {
+        const parametros = parametrosReporte();
+
+        await descargarAutorizado(
+            "/api/exportar-excel?" + parametros.toString(),
+            `evento_ups_${$("fechaReporte").value}.xlsx`
+        );
+
+    } catch (error) {
+        alert(error.message);
+    }
+};
+
+$("exportar").onclick = async () => {
+    try {
+        await descargarAutorizado(
+            "/api/exportar-asistencia",
+            "asistencia_ups.csv"
+        );
+
+    } catch (error) {
+        alert(error.message);
+    }
+};
+
+</script>
 </body>
-
 </html>
