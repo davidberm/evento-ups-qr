@@ -1,229 +1,678 @@
+
 """Evento UPS: importación autorizada, credenciales y control de acceso.
 NO integra automáticamente el sistema de inscripciones de la universidad.
 """
-from importaciones_ups import instalar_importaciones
 
+from importaciones_ups import instalar_importaciones
 from cedula_ec import cedula_ec_valida
 from reportes_ups import instalar_reportes
 
-import base64, csv, hashlib, io, os, re, secrets, unicodedata, json, html
+import base64
+import csv
+import hashlib
+import io
+import os
+import re
+import secrets
+import unicodedata
+import json
+import html
+
 from datetime import datetime, timezone
-from email.message import EmailMessage
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
 import qrcode
 import httpx
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile, BackgroundTasks, Request
-from fastapi.responses import FileResponse, StreamingResponse, Response, HTMLResponse
-from openpyxl import load_workbook
+
+from fastapi import (
+    FastAPI, File, Header, HTTPException, UploadFile,
+    BackgroundTasks, Request
+)
+from fastapi.responses import (
+    FileResponse, StreamingResponse, Response, HTMLResponse
+)
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Text, UniqueConstraint, select, func, update, insert, delete, and_, inspect, text
+
+from sqlalchemy import (
+    create_engine, MetaData, Table, Column, Integer,
+    String, Text, UniqueConstraint, select, func,
+    update, insert, delete, and_, inspect, text
+)
 from sqlalchemy.exc import IntegrityError
 
+
+# ============================================================
+# CONFIGURACIÓN GENERAL
+# ============================================================
+
 ROOT = Path(__file__).resolve().parent
-EVENT_ID = os.getenv('QR_EVENTO_ID','ups-2207')
-EVENT = 'Conferencia: Software Libre, Libertad Digital y su Relación con el Machine Learning'
-URL_UPS = 'https://appwfp.ups.edu.ec/foc-webins/index.xhtml?prog=2207'
-ADMIN_KEY = os.getenv('QR_ADMIN_KEY','')
-DB_URL = os.getenv('DATABASE_URL',f'sqlite:///{(ROOT / "asistencia.db").as_posix()}')
-# Render entrega URLs postgres:// o postgresql://; usar el controlador psycopg moderno.
-if DB_URL.startswith('postgres://'):
-    DB_URL = 'postgresql+psycopg://' + DB_URL[len('postgres://'):]
-elif DB_URL.startswith('postgresql://'):
-    DB_URL = 'postgresql+psycopg://' + DB_URL[len('postgresql://'):]
-engine = create_engine(DB_URL, pool_pre_ping=True, pool_recycle=300)
+
+EVENT_ID = os.getenv("QR_EVENTO_ID", "ups-2207")
+
+EVENT = (
+    "Conferencia: Software Libre, Libertad Digital "
+    "y su Relación con el Machine Learning"
+)
+
+URL_UPS = (
+    "https://appwfp.ups.edu.ec/foc-webins/"
+    "index.xhtml?prog=2207"
+)
+
+ADMIN_KEY = os.getenv("QR_ADMIN_KEY", "")
+
+DB_URL = os.getenv(
+    "DATABASE_URL",
+    f"sqlite:///{(ROOT / 'asistencia.db').as_posix()}"
+)
+
+# Render puede entregar URLs postgres:// o postgresql://.
+if DB_URL.startswith("postgres://"):
+    DB_URL = "postgresql+psycopg://" + DB_URL[len("postgres://"):]
+
+elif DB_URL.startswith("postgresql://"):
+    DB_URL = "postgresql+psycopg://" + DB_URL[len("postgresql://"):]
+
+engine = create_engine(
+    DB_URL,
+    pool_pre_ping=True,
+    pool_recycle=300
+)
+
+
+# ============================================================
+# BASE DE DATOS
+# ============================================================
 
 meta = MetaData()
-people = Table('participantes', meta,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('evento_id', String(80), nullable=False), Column('cedula', String(50), nullable=False),
-    Column('nombre', String(200), nullable=False), Column('email', String(255), nullable=False, default=''),
-    Column('telefono', String(60), nullable=False, default=''), Column('tipo', String(100), nullable=False, default=''),
-    Column('token_hash', String(64), nullable=False, unique=True), Column('token', String(120), nullable=False),
-    Column('registrado_en', String(40), nullable=False), Column('asistio_en', String(40)),
-    Column('correo_enviado_en', String(40)),
-    Column('email_estado', String(30), nullable=False, server_default='pendiente'),
-    Column('email_error', Text),
-    Column('email_message_id', String(255)),
-    Column('email_intentos', Integer, nullable=False, server_default='0'),
-    UniqueConstraint('evento_id','cedula', name='uq_evento_cedula'))
-attempts = Table('envios', meta,
-    Column('id', Integer, primary_key=True, autoincrement=True),
-    Column('participante_id', Integer, nullable=False),
-    Column('evento_id', String(80), nullable=False),
-    Column('destinatario', String(255), nullable=False),
-    Column('estado', String(30), nullable=False),
-    Column('fecha_utc', String(40), nullable=False),
-    Column('message_id', String(255)),
-    Column('detalle', Text),
+
+people = Table(
+    "participantes",
+    meta,
+
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("evento_id", String(80), nullable=False),
+    Column("cedula", String(50), nullable=False),
+    Column("nombre", String(200), nullable=False),
+
+    Column("email", String(255), nullable=False, default=""),
+    Column(
+        "email_institucional",
+        String(255),
+        nullable=False,
+        server_default=""
+    ),
+
+    Column("telefono", String(60), nullable=False, default=""),
+    Column("tipo", String(100), nullable=False, default=""),
+
+    Column("token_hash", String(64), nullable=False, unique=True),
+    Column("token", String(120), nullable=False),
+
+    Column("registrado_en", String(40), nullable=False),
+    Column("asistio_en", String(40)),
+    Column("correo_enviado_en", String(40)),
+
+    Column(
+        "email_estado",
+        String(30),
+        nullable=False,
+        server_default="pendiente"
+    ),
+
+    Column("email_error", Text),
+    Column("email_message_id", String(255)),
+
+    Column(
+        "email_intentos",
+        Integer,
+        nullable=False,
+        server_default="0"
+    ),
+
+    UniqueConstraint(
+        "evento_id",
+        "cedula",
+        name="uq_evento_cedula"
+    )
 )
+
+
+attempts = Table(
+    "envios",
+    meta,
+
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("participante_id", Integer, nullable=False),
+    Column("evento_id", String(80), nullable=False),
+    Column("destinatario", String(255), nullable=False),
+    Column("estado", String(30), nullable=False),
+    Column("fecha_utc", String(40), nullable=False),
+    Column("message_id", String(255)),
+    Column("detalle", Text),
+)
+
+
 meta.create_all(engine)
-# Migración compatible con la tabla creada por la versión v3: preserva los QR y asistencia.
-old_columns = {col['name'] for col in inspect(engine).get_columns('participantes')}
-new_columns = {
-    'email_estado': "VARCHAR(30) NOT NULL DEFAULT 'pendiente'",
-    'email_error': 'TEXT',
-    'email_message_id': 'VARCHAR(255)',
-    'email_intentos': 'INTEGER NOT NULL DEFAULT 0',
+
+
+# ============================================================
+# MIGRACIONES
+# ============================================================
+
+# Agrega columnas nuevas sin eliminar los datos anteriores.
+# Conserva los QR, identificaciones y registros de asistencia.
+
+old_columns = {
+    col["name"]
+    for col in inspect(engine).get_columns("participantes")
 }
+
+new_columns = {
+    "email_institucional": "VARCHAR(255) NOT NULL DEFAULT ''",
+    "email_estado": "VARCHAR(30) NOT NULL DEFAULT 'pendiente'",
+    "email_error": "TEXT",
+    "email_message_id": "VARCHAR(255)",
+    "email_intentos": "INTEGER NOT NULL DEFAULT 0",
+}
+
 with engine.begin() as conn:
+
     for name, ddl in new_columns.items():
+
         if name not in old_columns:
-            conn.execute(text(f'ALTER TABLE participantes ADD COLUMN {name} {ddl}'))
-    conn.execute(text("UPDATE participantes SET email_estado='aceptado' WHERE correo_enviado_en IS NOT NULL AND email_estado='pendiente'"))
+            conn.execute(
+                text(
+                    f"ALTER TABLE participantes "
+                    f"ADD COLUMN {name} {ddl}"
+                )
+            )
 
-app = FastAPI(title='Evento UPS · Gestión de QR', version='4.0')
+    conn.execute(
+        text(
+            "UPDATE participantes "
+            "SET email_estado='aceptado' "
+            "WHERE correo_enviado_en IS NOT NULL "
+            "AND email_estado='pendiente'"
+        )
+    )
 
-def now(): return datetime.now(timezone.utc).isoformat(timespec='seconds')
+
+# ============================================================
+# APLICACIÓN FASTAPI
+# ============================================================
+
+app = FastAPI(
+    title="Evento UPS · Gestión de QR",
+    version="4.1"
+)
+
+
+# ============================================================
+# FUNCIONES GENERALES
+# ============================================================
+
+def now():
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def guard(key):
-    if not ADMIN_KEY or not key or not secrets.compare_digest(ADMIN_KEY,key):
-        raise HTTPException(401,'Acceso no autorizado: configura QR_ADMIN_KEY y proporciona la clave.')
-def norm(s):
-    s=unicodedata.normalize('NFKD',str(s or '')).encode('ascii','ignore').decode().lower().strip()
-    return re.sub('[^a-z0-9]','',s)
-def getfield(row,*names):
-    for n in names:
-        v=row.get(norm(n))
-        if v is not None and str(v).strip(): return str(v).strip()
-    return ''
-def qr_payload(token): return f'EVT1:{EVENT_ID}:{token}'
-def qr_bytes(token):
-    img=qrcode.make(qr_payload(token)); out=io.BytesIO(); img.save(out,'PNG');out.seek(0);return out
+    if (
+        not ADMIN_KEY
+        or not key
+        or not secrets.compare_digest(ADMIN_KEY, key)
+    ):
+        raise HTTPException(
+            401,
+            "Acceso no autorizado: configura QR_ADMIN_KEY "
+            "y proporciona la clave."
+        )
 
-def asrow(row): return dict(row._mapping)
+
+def norm(s):
+    s = (
+        unicodedata.normalize("NFKD", str(s or ""))
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+        .strip()
+    )
+
+    return re.sub("[^a-z0-9]", "", s)
+
+
+def getfield(row, *names):
+    for name in names:
+        value = row.get(norm(name))
+
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    return ""
+
+
+def qr_payload(token):
+    return f"EVT1:{EVENT_ID}:{token}"
+
+
+def qr_bytes(token):
+    img = qrcode.make(qr_payload(token))
+
+    out = io.BytesIO()
+    img.save(out, "PNG")
+    out.seek(0)
+
+    return out
+
+
+def asrow(row):
+    return dict(row._mapping)
+
+
 def get_person(cid):
-    with engine.connect() as c:
-        row=c.execute(select(people).where(and_(people.c.id==cid,people.c.evento_id==EVENT_ID))).first()
-    if row is None: raise HTTPException(404,'Participante no encontrado')
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(people).where(
+                and_(
+                    people.c.id == cid,
+                    people.c.evento_id == EVENT_ID
+                )
+            )
+        ).first()
+
+    if row is None:
+        raise HTTPException(
+            404,
+            "Participante no encontrado"
+        )
+
     return asrow(row)
 
-BREVO_URL = 'https://api.brevo.com/v3/smtp/email'
-MAX_DAILY = max(1, min(int(os.getenv('EMAIL_DAILY_LIMIT', '200')), 10000))
+
+# ============================================================
+# CONFIGURACIÓN BREVO
+# ============================================================
+
+BREVO_URL = "https://api.brevo.com/v3/smtp/email"
+
+MAX_DAILY = max(
+    1,
+    min(int(os.getenv("EMAIL_DAILY_LIMIT", "200")), 10000)
+)
 
 
 def mail_configured():
-    return bool(os.getenv('BREVO_API_KEY') and os.getenv('BREVO_SENDER_EMAIL'))
+    return bool(
+        os.getenv("BREVO_API_KEY")
+        and os.getenv("BREVO_SENDER_EMAIL")
+    )
 
 
 def is_test_address(value):
-    addr=(value or '').strip().lower()
-    return (not addr or addr.endswith(('@example.com','@example.org','.test','.invalid')))
+    addr = (value or "").strip().lower()
 
+    return (
+        not addr
+        or addr.endswith((
+            "@example.com",
+            "@example.org",
+            ".test",
+            ".invalid"
+        ))
+    )
+
+
+def get_recipients(person):
+    """
+    Obtiene los correos personales e institucionales.
+    Elimina duplicados y direcciones de prueba.
+    """
+
+    correos = [
+        person.get("email"),
+        person.get("email_institucional")
+    ]
+
+    return list(dict.fromkeys(
+        correo.strip().lower()
+        for correo in correos
+        if correo
+        and correo.strip()
+        and not is_test_address(correo)
+    ))
+
+
+# ============================================================
+# RESERVAR UN ENVÍO
+# ============================================================
 
 def claim_mail(pid, *, allow_retry=False):
-    """Reserva atómicamente el envío. Nunca reintenta estados inciertos automáticamente."""
-    person=get_person(pid)
-    if is_test_address(person['email']):
-        return False, 'Correo ficticio o ausente. No se enviará a example.com, example.org, .test o .invalid.'
+
+    person = get_person(pid)
+
+    destinatarios = get_recipients(person)
+
+    if not destinatarios:
+        return False, "El participante no tiene correos válidos."
+
     with engine.begin() as conn:
-        # No permite sobrepasar el techo diario por uso ordinario.
+
         today = datetime.now(timezone.utc).date().isoformat()
-        daily = conn.execute(select(func.count()).select_from(attempts).where(and_(
-            attempts.c.evento_id==EVENT_ID, attempts.c.fecha_utc>=today))).scalar_one()
+
+        daily = conn.execute(
+            select(func.count())
+            .select_from(attempts)
+            .where(
+                and_(
+                    attempts.c.evento_id == EVENT_ID,
+                    attempts.c.fecha_utc >= today
+                )
+            )
+        ).scalar_one()
+
         if daily >= MAX_DAILY:
-            return False, 'Límite diario de intentos alcanzado. Continúa mañana o revisa el plan de Brevo.'
-        allowed = ['pendiente'] + (['error', 'rebotado'] if allow_retry else [])
-        res = conn.execute(update(people).where(and_(
-            people.c.id==pid, people.c.evento_id==EVENT_ID,
-            people.c.email!='', people.c.email_estado.in_(allowed)
-        )).values(email_estado='en_proceso', email_error=None,
-                 email_intentos=people.c.email_intentos+1))
-        if res.rowcount != 1: return False, 'El participante no tiene correo o ya fue procesado.'
-        row=conn.execute(select(people.c.email).where(people.c.id==pid)).first()
-        conn.execute(insert(attempts).values(participante_id=pid, evento_id=EVENT_ID,
-                        destinatario=row.email, estado='en_proceso', fecha_utc=now()))
+            return False, "Límite diario de intentos alcanzado."
+
+        allowed = ["pendiente"]
+
+        if allow_retry:
+            allowed += ["error", "rebotado"]
+
+        res = conn.execute(
+            update(people)
+            .where(
+                and_(
+                    people.c.id == pid,
+                    people.c.evento_id == EVENT_ID,
+                    people.c.email_estado.in_(allowed)
+                )
+            )
+            .values(
+                email_estado="en_proceso",
+                email_error=None,
+                email_intentos=people.c.email_intentos + 1
+            )
+        )
+
+        if res.rowcount != 1:
+            return (
+                False,
+                "El participante ya fue procesado "
+                "o está en envío."
+            )
+
+        conn.execute(
+            insert(attempts).values(
+                participante_id=pid,
+                evento_id=EVENT_ID,
+                destinatario="; ".join(destinatarios),
+                estado="en_proceso",
+                fecha_utc=now()
+            )
+        )
+
     return True, None
 
 
-def finish_mail(pid, state, detail=None, message_id=None):
-    with engine.begin() as conn:
-        # Evita pisar un estado definitivo si ya llegó un webhook.
-        conn.execute(update(people).where(and_(people.c.id==pid, people.c.email_estado=='en_proceso'))
-                     .values(email_estado=state, email_error=(detail or '')[:600] or None,
-                             email_message_id=message_id,
-                             **({'correo_enviado_en': now()} if state=='aceptado' else {})))
-        aid=conn.execute(select(attempts.c.id).where(and_(attempts.c.participante_id==pid,
-                      attempts.c.evento_id==EVENT_ID, attempts.c.estado=='en_proceso'))
-                         .order_by(attempts.c.id.desc()).limit(1)).scalar_one_or_none()
-        if aid:
-            conn.execute(update(attempts).where(attempts.c.id==aid).values(
-                estado=state, detalle=(detail or '')[:600] or None, message_id=message_id))
+# ============================================================
+# FINALIZAR UN ENVÍO
+# ============================================================
 
+def finish_mail(
+    pid,
+    state,
+    detail=None,
+    message_id=None
+):
+
+    with engine.begin() as conn:
+
+        # Evita modificar un estado definitivo si ya llegó un webhook.
+        conn.execute(
+            update(people)
+            .where(
+                and_(
+                    people.c.id == pid,
+                    people.c.email_estado == "en_proceso"
+                )
+            )
+            .values(
+                email_estado=state,
+                email_error=(detail or "")[:600] or None,
+                email_message_id=message_id,
+                **(
+                    {"correo_enviado_en": now()}
+                    if state == "aceptado"
+                    else {}
+                )
+            )
+        )
+
+        aid = conn.execute(
+            select(attempts.c.id)
+            .where(
+                and_(
+                    attempts.c.participante_id == pid,
+                    attempts.c.evento_id == EVENT_ID,
+                    attempts.c.estado == "en_proceso"
+                )
+            )
+            .order_by(attempts.c.id.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+        if aid:
+            conn.execute(
+                update(attempts)
+                .where(attempts.c.id == aid)
+                .values(
+                    estado=state,
+                    detalle=(detail or "")[:600] or None,
+                    message_id=message_id
+                )
+            )
+
+
+# ============================================================
+# ENVÍO DEL QR A LOS DOS CORREOS
+# ============================================================
 
 def send_brevo(pid):
-    person=get_person(pid)
-    greeting=html.escape(person['nombre'])
-    title=html.escape(EVENT)
-    plain=(f"Hola {person['nombre']}:\n\nAdjuntamos tu credencial QR para el evento «{EVENT}».\n"
-           '23 de noviembre de 2026, 10:00–13:00. Guayaquil – Centenario.\n'
-           'Presenta esta credencial junto con tu documento de identificación.\n'
-           'Si no solicitaste tu inscripción, contacta con los organizadores.\n')
-    markup=(f'<html><body style="font-family:Arial,sans-serif;color:#172a45">'
-            '<div style="max-width:590px;margin:auto;padding:24px;border:1px solid #ddd;border-radius:12px">'
-            '<h2 style="color:#183d75">Credencial de ingreso · Evento UPS</h2>'
-            f'<p>Hola <b>{greeting}</b>:</p><p>Adjuntamos tu código QR para la conferencia <b>{title}</b>.</p>'
-            '<p><b>Fecha:</b> 23 de noviembre de 2026<br><b>Horario:</b> 10:00–13:00<br>'
-            '<b>Lugar:</b> Guayaquil – Centenario</p>'
-            '<p>Presenta tu código QR y documento de identificación al ingresar.</p>'
-            '<p style="font-size:12px;color:#677">Si recibiste esto por error, contacta con la organización.</p>'
-            '</div></body></html>')
-    payload={
-        'sender':{'name':os.getenv('BREVO_SENDER_NAME','Organización del evento'),
-                  'email':os.environ['BREVO_SENDER_EMAIL']},
-        'to':[{'email':person['email'],'name':person['nombre']}],
-        'subject':'Tu código QR · Conferencia UPS · 23 de noviembre de 2026',
-        'htmlContent': markup,
-        'attachment':[{'name':'credencial_qr.png',
-                       'content':base64.b64encode(qr_bytes(person['token']).read()).decode('ascii')}],
-        'tags':['evento-ups-2207'],
+
+    person = get_person(pid)
+
+    destinatarios = get_recipients(person)
+
+    if not destinatarios:
+        finish_mail(
+            pid,
+            "error",
+            "El participante no tiene correos válidos."
+        )
+        return False
+
+    greeting = html.escape(person["nombre"])
+    title = html.escape(EVENT)
+
+    plain = (
+        f"Hola {person['nombre']}:\n\n"
+        f"Adjuntamos tu credencial QR para el evento «{EVENT}».\n"
+        "23 de noviembre de 2026, 10:00–13:00. "
+        "Guayaquil – Centenario.\n"
+        "Presenta esta credencial junto con tu documento "
+        "de identificación.\n"
+        "Si no solicitaste tu inscripción, contacta "
+        "con los organizadores.\n"
+    )
+
+    markup = (
+        '<html><body style="font-family:Arial,sans-serif;color:#172a45">'
+        '<div style="max-width:590px;margin:auto;padding:24px;'
+        'border:1px solid #ddd;border-radius:12px">'
+        '<h2 style="color:#183d75">'
+        'Credencial de ingreso · Evento UPS</h2>'
+        f'<p>Hola <b>{greeting}</b>:</p>'
+        '<p>Adjuntamos tu código QR para la conferencia '
+        f'<b>{title}</b>.</p>'
+        '<p><b>Fecha:</b> 23 de noviembre de 2026<br>'
+        '<b>Horario:</b> 10:00–13:00<br>'
+        '<b>Lugar:</b> Guayaquil – Centenario</p>'
+        '<p>Presenta tu código QR y documento de '
+        'identificación al ingresar.</p>'
+        '<p style="font-size:12px;color:#677">'
+        'Si recibiste esto por error, contacta con la organización.'
+        '</p>'
+        '</div></body></html>'
+    )
+
+    payload = {
+        "sender": {
+            "name": os.getenv(
+                "BREVO_SENDER_NAME",
+                "Organización del evento"
+            ),
+            "email": os.environ["BREVO_SENDER_EMAIL"]
+        },
+
+        # Un mismo mensaje con el QR adjunto para ambos correos.
+        "to": [
+            {
+                "email": email,
+                "name": person["nombre"]
+            }
+            for email in destinatarios
+        ],
+
+        "subject": (
+            "Tu código QR · Conferencia UPS · "
+            "23 de noviembre de 2026"
+        ),
+
+        "htmlContent": markup,
+        "textContent": plain,
+
+        "attachment": [
+            {
+                "name": "credencial_qr.png",
+                "content": base64.b64encode(
+                    qr_bytes(person["token"]).read()
+                ).decode("ascii")
+            }
+        ],
+
+        "tags": ["evento-ups-2207"]
     }
+
     try:
-        response=httpx.post(BREVO_URL, json=payload,
-                            headers={'api-key':os.environ['BREVO_API_KEY'],'accept':'application/json'},
-                            timeout=12)
-        if response.status_code==201:
-            message_id=response.json().get('messageId')
-            finish_mail(pid,'aceptado', message_id=message_id)
+
+        response = httpx.post(
+            BREVO_URL,
+            json=payload,
+            headers={
+                "api-key": os.environ["BREVO_API_KEY"],
+                "accept": "application/json"
+            },
+            timeout=12
+        )
+
+        if response.status_code == 201:
+
+            message_id = response.json().get("messageId")
+
+            finish_mail(
+                pid,
+                "aceptado",
+                message_id=message_id
+            )
+
             return True
-        # Solo guarda una descripción, jamás claves ni payloads.
-        error=f'Brevo HTTP {response.status_code}. Revisa créditos, remitente y correo.'
-        finish_mail(pid,'error', error)
+
+        error = (
+            f"Brevo HTTP {response.status_code}. "
+            "Revisa créditos, remitente y correo."
+        )
+
+        finish_mail(
+            pid,
+            "error",
+            error
+        )
+
     except (httpx.TimeoutException, httpx.NetworkError):
-        # Brevo pudo recibir el mensaje aunque nuestra app no obtuviera respuesta.
-        finish_mail(pid,'incierto','No se recibió confirmación. Revisar logs de Brevo antes de reintentar.')
+
+        finish_mail(
+            pid,
+            "incierto",
+            "No se recibió confirmación. "
+            "Revisar logs de Brevo antes de reintentar."
+        )
+
     except Exception:
-        finish_mail(pid,'error','Fallo local de envío. Consultar registros del servidor.')
+
+        finish_mail(
+            pid,
+            "error",
+            "Fallo local de envío. "
+            "Consultar registros del servidor."
+        )
+
     return False
 
 
+# ============================================================
+# PROCESAMIENTO EN SEGUNDO PLANO
+# ============================================================
+
 def process_batch(ids):
+
     for pid in ids:
         send_brevo(pid)
 
-@app.get('/')
-def home(): return FileResponse(ROOT/'static'/'index.html')
-@app.get('/escanear')
-def scanner(): return FileResponse(ROOT/'static'/'escanear.html')
-@app.get('/api/evento')
-def event(): return {'evento':EVENT,'evento_id':EVENT_ID,'inscripcion_oficial':URL_UPS,'base_de_datos':'PostgreSQL persistente' if DB_URL.startswith('postgresql+') else ('Azure SQL' if DB_URL.startswith('mssql') else 'SQLite temporal (solo pruebas)')}
+
+# ============================================================
+# PÁGINAS PRINCIPALES
+# ============================================================
+
+@app.get("/")
+def home():
+    return FileResponse(ROOT / "static" / "index.html")
 
 
-# =====================================================
+@app.get("/escanear")
+def scanner():
+    return FileResponse(ROOT / "static" / "escanear.html")
+
+
+@app.get("/api/evento")
+def event():
+
+    if DB_URL.startswith("postgresql+"):
+        database = "PostgreSQL persistente"
+
+    elif DB_URL.startswith("mssql"):
+        database = "Azure SQL"
+
+    else:
+        database = "SQLite temporal (solo pruebas)"
+
+    return {
+        "evento": EVENT,
+        "evento_id": EVENT_ID,
+        "inscripcion_oficial": URL_UPS,
+        "base_de_datos": database
+    }
+
+
+# ============================================================
 # IMPORTACIÓN ANTIGUA DESACTIVADA
-# =====================================================
-# La importación anterior no guardaba historial.
-# Ahora utilizaremos el módulo importaciones_ups.py,
-# que permite analizar el Excel antes de confirmarlo.
-#
-# Esta ruta se conserva para evitar que una versión
-# antigua del navegador procese archivos sin historial.
-# =====================================================
+# ============================================================
 
 @app.post("/api/importar")
 def importacion_antigua_desactivada(
     x_admin_key: str | None = Header(None)
 ):
+
     guard(x_admin_key)
 
     raise HTTPException(
@@ -236,213 +685,853 @@ def importacion_antigua_desactivada(
     )
 
 
+# ============================================================
+# ELIMINAR PARTICIPANTE
+# ============================================================
 
-@app.delete('/api/participantes/{pid}')
-def remove_person(pid:int, x_admin_key:str|None=Header(None)):
+@app.delete("/api/participantes/{pid}")
+def remove_person(
+    pid: int,
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
+
     with engine.begin() as conn:
-        p=conn.execute(select(people.c.id,people.c.nombre,people.c.cedula,people.c.asistio_en,
-              people.c.email_estado,people.c.email_intentos).where(and_(people.c.id==pid,
-              people.c.evento_id==EVENT_ID)).with_for_update()).first()
-        if p is None:raise HTTPException(404,'Participante no encontrado')
-        if p.asistio_en or p.email_estado!='pendiente' or p.email_intentos:
-            raise HTTPException(409,'No se puede eliminar: ya tiene ingreso o historial de envío. Contacta al administrador para una corrección auditada.')
-        conn.execute(delete(people).where(and_(people.c.id==pid,people.c.evento_id==EVENT_ID)))
-    return {'eliminado':True,'nombre':p.nombre,'cedula':p.cedula}
+
+        p = conn.execute(
+            select(
+                people.c.id,
+                people.c.nombre,
+                people.c.cedula,
+                people.c.asistio_en,
+                people.c.email_estado,
+                people.c.email_intentos
+            )
+            .where(
+                and_(
+                    people.c.id == pid,
+                    people.c.evento_id == EVENT_ID
+                )
+            )
+            .with_for_update()
+        ).first()
+
+        if p is None:
+            raise HTTPException(
+                404,
+                "Participante no encontrado"
+            )
+
+        if (
+            p.asistio_en
+            or p.email_estado != "pendiente"
+            or p.email_intentos
+        ):
+            raise HTTPException(
+                409,
+                "No se puede eliminar: ya tiene ingreso "
+                "o historial de envío. Contacta al administrador "
+                "para una corrección auditada."
+            )
+
+        conn.execute(
+            delete(people).where(
+                and_(
+                    people.c.id == pid,
+                    people.c.evento_id == EVENT_ID
+                )
+            )
+        )
+
+    return {
+        "eliminado": True,
+        "nombre": p.nombre,
+        "cedula": p.cedula
+    }
+
+
+# ============================================================
+# ELIMINAR REGISTROS DE PRUEBA
+# ============================================================
 
 class DeleteTests(BaseModel):
-    confirmacion:str=Field(min_length=1)
+    confirmacion: str = Field(min_length=1)
 
-@app.post('/api/eliminar-ejemplos')
-def remove_tests(body:DeleteTests,x_admin_key:str|None=Header(None)):
+
+@app.post("/api/eliminar-ejemplos")
+def remove_tests(
+    body: DeleteTests,
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    if body.confirmacion != 'ELIMINAR EJEMPLOS':
-        raise HTTPException(400,'Debes confirmar exactamente ELIMINAR EJEMPLOS')
-    removed=[]
+
+    if body.confirmacion != "ELIMINAR EJEMPLOS":
+        raise HTTPException(
+            400,
+            "Debes confirmar exactamente ELIMINAR EJEMPLOS"
+        )
+
+    removed = []
+
     with engine.begin() as conn:
-        rows=conn.execute(select(people.c.id,people.c.cedula,people.c.email,
-            people.c.asistio_en,people.c.email_estado,people.c.email_intentos).where(
-            people.c.evento_id==EVENT_ID).with_for_update()).all()
+
+        rows = conn.execute(
+            select(
+                people.c.id,
+                people.c.cedula,
+                people.c.email,
+                people.c.asistio_en,
+                people.c.email_estado,
+                people.c.email_intentos
+            )
+            .where(people.c.evento_id == EVENT_ID)
+            .with_for_update()
+        ).all()
+
         for p in rows:
-            # Solo registros identificados explícitamente con TEST, sin ingresos ni envíos.
-            if not p.cedula.upper().startswith('TEST'):continue
-            if p.asistio_en or p.email_estado!='pendiente' or p.email_intentos:continue
-            conn.execute(delete(people).where(and_(people.c.id==p.id,people.c.evento_id==EVENT_ID)))
+
+            if not p.cedula.upper().startswith("TEST"):
+                continue
+
+            if (
+                p.asistio_en
+                or p.email_estado != "pendiente"
+                or p.email_intentos
+            ):
+                continue
+
+            conn.execute(
+                delete(people).where(
+                    and_(
+                        people.c.id == p.id,
+                        people.c.evento_id == EVENT_ID
+                    )
+                )
+            )
+
             removed.append(p.cedula)
-    return {'eliminados':len(removed),'documentos':removed}
 
-@app.get('/api/participantes')
-def list_people(x_admin_key:str|None=Header(None)):
+    return {
+        "eliminados": len(removed),
+        "documentos": removed
+    }
+
+
+# ============================================================
+# LISTADO DE PARTICIPANTES Y ESTADÍSTICAS
+# ============================================================
+
+@app.get("/api/participantes")
+def list_people(
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    with engine.connect() as c:
-        count=c.execute(select(func.count()).select_from(people).where(people.c.evento_id==EVENT_ID)).scalar_one()
-        arrived=c.execute(select(func.count()).select_from(people).where(and_(people.c.evento_id==EVENT_ID,people.c.asistio_en.is_not(None)))).scalar_one()
-        rows=c.execute(select(people.c.id,people.c.nombre,people.c.cedula,people.c.email,people.c.telefono,people.c.tipo,people.c.asistio_en,people.c.correo_enviado_en,people.c.email_estado,people.c.email_error,people.c.email_intentos).where(people.c.evento_id==EVENT_ID).order_by(people.c.id.desc()).limit(3000)).all()
-    with engine.connect() as c:
-        states=dict(c.execute(select(people.c.email_estado,func.count()).where(people.c.evento_id==EVENT_ID)
-                      .group_by(people.c.email_estado)).all())
-    return {'total':count,'asistieron':arrived,'pendientes':count-arrived,
-            'envios':states,'limite_diario':MAX_DAILY,'brevo_configurado':mail_configured(),
-            'participantes':[asrow(p) for p in rows]}
 
-@app.get('/api/qr/{pid}')
-def download_qr(pid:int,x_admin_key:str|None=Header(None)):
-    guard(x_admin_key);p=get_person(pid)
-    return StreamingResponse(qr_bytes(p['token']),media_type='image/png',headers={'Cache-Control':'no-store','Content-Disposition':f'attachment; filename="entrada_{pid}.png"'})
+    with engine.connect() as conn:
 
-@app.post('/api/enviar-correo/{pid}')
-def email_one(pid:int, background_tasks:BackgroundTasks, x_admin_key:str|None=Header(None)):
+        count = conn.execute(
+            select(func.count())
+            .select_from(people)
+            .where(people.c.evento_id == EVENT_ID)
+        ).scalar_one()
+
+        arrived = conn.execute(
+            select(func.count())
+            .select_from(people)
+            .where(
+                and_(
+                    people.c.evento_id == EVENT_ID,
+                    people.c.asistio_en.is_not(None)
+                )
+            )
+        ).scalar_one()
+
+        rows = conn.execute(
+            select(
+                people.c.id,
+                people.c.nombre,
+                people.c.cedula,
+                people.c.email,
+                people.c.email_institucional,
+                people.c.telefono,
+                people.c.tipo,
+                people.c.asistio_en,
+                people.c.correo_enviado_en,
+                people.c.email_estado,
+                people.c.email_error,
+                people.c.email_intentos
+            )
+            .where(people.c.evento_id == EVENT_ID)
+            .order_by(people.c.id.desc())
+            .limit(3000)
+        ).all()
+
+        states = dict(
+            conn.execute(
+                select(
+                    people.c.email_estado,
+                    func.count()
+                )
+                .where(people.c.evento_id == EVENT_ID)
+                .group_by(people.c.email_estado)
+            ).all()
+        )
+
+    return {
+        "total": count,
+        "asistieron": arrived,
+        "pendientes": count - arrived,
+        "envios": states,
+        "limite_diario": MAX_DAILY,
+        "brevo_configurado": mail_configured(),
+        "participantes": [
+            asrow(p) for p in rows
+        ]
+    }
+
+
+# ============================================================
+# DESCARGAR QR INDIVIDUAL
+# ============================================================
+
+@app.get("/api/qr/{pid}")
+def download_qr(
+    pid: int,
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    if not mail_configured(): raise HTTPException(409,'Configura BREVO_API_KEY y BREVO_SENDER_EMAIL en Render.')
+
+    p = get_person(pid)
+
+    return StreamingResponse(
+        qr_bytes(p["token"]),
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition":
+                f'attachment; filename="entrada_{pid}.png"'
+        }
+    )
+
+
+# ============================================================
+# ENVÍO INDIVIDUAL
+# ============================================================
+
+@app.post("/api/enviar-correo/{pid}")
+def email_one(
+    pid: int,
+    background_tasks: BackgroundTasks,
+    x_admin_key: str | None = Header(None)
+):
+
+    guard(x_admin_key)
+
+    if not mail_configured():
+        raise HTTPException(
+            409,
+            "Configura BREVO_API_KEY y BREVO_SENDER_EMAIL en Render."
+        )
+
     get_person(pid)
-    ok, reason=claim_mail(pid)
-    if not ok: raise HTTPException(409,reason)
-    background_tasks.add_task(send_brevo,pid)
-    return {'mensaje':'Envío programado. Consulta el estado para confirmar la aceptación de Brevo.', 'id':pid}
+
+    ok, reason = claim_mail(pid)
+
+    if not ok:
+        raise HTTPException(409, reason)
+
+    background_tasks.add_task(send_brevo, pid)
+
+    return {
+        "mensaje": (
+            "Envío programado. Consulta el estado "
+            "para confirmar la aceptación de Brevo."
+        ),
+        "id": pid
+    }
+
+
+# ============================================================
+# ENVÍO MASIVO
+# ============================================================
 
 class BulkRequest(BaseModel):
-    limite:int=Field(default=20,ge=1,le=20)
+    limite: int = Field(default=20, ge=1, le=20)
 
-@app.post('/api/enviar-pendientes')
-def email_pending(req:BulkRequest, background_tasks:BackgroundTasks, x_admin_key:str|None=Header(None)):
+
+@app.post("/api/enviar-pendientes")
+def email_pending(
+    req: BulkRequest,
+    background_tasks: BackgroundTasks,
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    if not mail_configured(): raise HTTPException(409,'Configura BREVO_API_KEY y BREVO_SENDER_EMAIL en Render.')
-    with engine.connect() as c:
-        ids=c.execute(select(people.c.id).where(and_(people.c.evento_id==EVENT_ID,
-                people.c.email!='',people.c.email_estado=='pendiente'))
-                .order_by(people.c.id).limit(3000)).scalars().all()
-    claimed=[]
+
+    if not mail_configured():
+        raise HTTPException(
+            409,
+            "Configura BREVO_API_KEY y BREVO_SENDER_EMAIL en Render."
+        )
+
+    # Selecciona participantes con correo personal o institucional.
+    with engine.connect() as conn:
+
+        ids = conn.execute(
+            select(people.c.id)
+            .where(
+                and_(
+                    people.c.evento_id == EVENT_ID,
+                    people.c.email_estado == "pendiente",
+                    (
+                        (people.c.email != "")
+                        | (people.c.email_institucional != "")
+                    )
+                )
+            )
+            .order_by(people.c.id)
+            .limit(3000)
+        ).scalars().all()
+
+    claimed = []
+
     for pid in ids:
-        if len(claimed)>=req.limite: break
-        if is_test_address(get_person(pid)['email']): continue
-        ok, reason=claim_mail(pid)
-        if not ok: break
+
+        if len(claimed) >= req.limite:
+            break
+
+        persona = get_person(pid)
+
+        correos = get_recipients(persona)
+
+        if not correos:
+            continue
+
+        ok, reason = claim_mail(pid)
+
+        if not ok:
+            # Si se alcanzó el límite diario, detener el lote.
+            if reason and "Límite diario" in reason:
+                break
+
+            continue
+
         claimed.append(pid)
-    if claimed: background_tasks.add_task(process_batch,claimed)
-    return {'programados':len(claimed),'mensaje':'En proceso. Actualiza las estadísticas luego de unos segundos.',
-            'limite_diario':MAX_DAILY,'nota':'Programado no significa entregado. Comprueba estado aceptado/entregado.'}
 
-@app.post('/api/reintentar-correo/{pid}')
-def retry_mail(pid:int, background_tasks:BackgroundTasks, x_admin_key:str|None=Header(None)):
+    if claimed:
+        background_tasks.add_task(
+            process_batch,
+            claimed
+        )
+
+    return {
+        "programados": len(claimed),
+        "mensaje": (
+            "En proceso. Actualiza las estadísticas "
+            "luego de unos segundos."
+        ),
+        "limite_diario": MAX_DAILY,
+        "nota": (
+            "Programado no significa entregado. "
+            "Comprueba estado aceptado/entregado."
+        )
+    }
+
+
+# ============================================================
+# REINTENTAR ENVÍO
+# ============================================================
+
+@app.post("/api/reintentar-correo/{pid}")
+def retry_mail(
+    pid: int,
+    background_tasks: BackgroundTasks,
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    if not mail_configured(): raise HTTPException(409,'Brevo no configurado.')
+
+    if not mail_configured():
+        raise HTTPException(
+            409,
+            "Brevo no configurado."
+        )
+
     get_person(pid)
-    ok,reason=claim_mail(pid,allow_retry=True)
-    if not ok: raise HTTPException(409,reason+' No reintentar estados inciertos sin revisar Brevo.')
-    background_tasks.add_task(send_brevo,pid)
-    return {'mensaje':'Reintento programado. Actualiza el panel para revisar el resultado.'}
 
-@app.get('/api/envios')
-def logs_mail(x_admin_key:str|None=Header(None)):
+    ok, reason = claim_mail(
+        pid,
+        allow_retry=True
+    )
+
+    if not ok:
+        raise HTTPException(
+            409,
+            reason + " No reintentar estados inciertos sin revisar Brevo."
+        )
+
+    background_tasks.add_task(
+        send_brevo,
+        pid
+    )
+
+    return {
+        "mensaje": (
+            "Reintento programado. Actualiza el panel "
+            "para revisar el resultado."
+        )
+    }
+
+
+# ============================================================
+# HISTORIAL DE ENVÍOS
+# ============================================================
+
+@app.get("/api/envios")
+def logs_mail(
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    with engine.connect() as c:
-        rows=c.execute(select(attempts.c.fecha_utc,attempts.c.destinatario,attempts.c.estado,
-                     attempts.c.message_id,attempts.c.detalle).where(attempts.c.evento_id==EVENT_ID)
-                     .order_by(attempts.c.id.desc()).limit(100)).all()
-    return {'envios':[asrow(x) for x in rows]}
 
-@app.post('/api/brevo/webhook/{secret}')
-async def brevo_webhook(secret:str, request:Request):
-    expected=os.getenv('BREVO_WEBHOOK_SECRET','')
-    if not expected or not secrets.compare_digest(secret,expected):
-        raise HTTPException(403,'Webhook no autorizado')
-    content=await request.body()
-    if len(content)>64000: raise HTTPException(413,'Payload demasiado grande')
-    try: data=json.loads(content)
-    except (ValueError,UnicodeError): raise HTTPException(400,'JSON inválido')
-    if not isinstance(data,dict): raise HTTPException(400,'Formato inválido')
-    msg_id=data.get('message-id') or data.get('messageId')
-    evt=str(data.get('event','')).lower()
-    new={'delivered':'entregado','hard_bounce':'rebotado','soft_bounce':'error',
-         'invalid_email':'rebotado','blocked':'error','error':'error',
-         'spam':'error','deferred':'error'}.get(evt)
-    if not msg_id or not new: return {'procesado':False}
-    with engine.begin() as c:
-        p=c.execute(select(people.c.id,people.c.email_estado).where(and_(
-            people.c.evento_id==EVENT_ID,people.c.email_message_id==msg_id))).first()
-        if not p: return {'procesado':False}
-        if p.email_estado=='entregado' and new!='rebotado':return {'procesado':True}
-        c.execute(update(people).where(people.c.id==p.id).values(email_estado=new,
-                 email_error=('Brevo reportó '+evt) if new in ('rebotado','error') else None))
-        c.execute(update(attempts).where(attempts.c.message_id==msg_id).values(estado=new))
-    return {'procesado':True}
+    with engine.connect() as conn:
 
-@app.get('/api/whatsapp/{pid}')
-def whatsapp_manual(pid:int,x_admin_key:str|None=Header(None)):
-    guard(x_admin_key);p=get_person(pid)
-    phone=re.sub('[^0-9]','',p['telefono'])
-    if not phone: raise HTTPException(400,'No hay número de celular para este participante.')
-    return {'url':f'https://wa.me/{phone}?text='+quote(f'Hola {p["nombre"]}, contactamos desde la organización del evento UPS sobre tu credencial QR. Por seguridad, te la enviaremos por el canal de entrega autorizado.'),'nota':'Abre un chat manual. No envía automáticamente el QR. Requiere consentimiento y número con código de país.'}
+        rows = conn.execute(
+            select(
+                attempts.c.fecha_utc,
+                attempts.c.destinatario,
+                attempts.c.estado,
+                attempts.c.message_id,
+                attempts.c.detalle
+            )
+            .where(attempts.c.evento_id == EVENT_ID)
+            .order_by(attempts.c.id.desc())
+            .limit(100)
+        ).all()
 
-@app.get('/api/exportar-asistencia')
-def export_attendance(x_admin_key:str|None=Header(None)):
+    return {
+        "envios": [
+            asrow(x) for x in rows
+        ]
+    }
+
+
+# ============================================================
+# WEBHOOK DE BREVO
+# ============================================================
+
+@app.post("/api/brevo/webhook/{secret}")
+async def brevo_webhook(
+    secret: str,
+    request: Request
+):
+
+    expected = os.getenv("BREVO_WEBHOOK_SECRET", "")
+
+    if (
+        not expected
+        or not secrets.compare_digest(secret, expected)
+    ):
+        raise HTTPException(
+            403,
+            "Webhook no autorizado"
+        )
+
+    content = await request.body()
+
+    if len(content) > 64000:
+        raise HTTPException(
+            413,
+            "Payload demasiado grande"
+        )
+
+    try:
+        data = json.loads(content)
+
+    except (ValueError, UnicodeError):
+        raise HTTPException(
+            400,
+            "JSON inválido"
+        )
+
+    if not isinstance(data, dict):
+        raise HTTPException(
+            400,
+            "Formato inválido"
+        )
+
+    msg_id = (
+        data.get("message-id")
+        or data.get("messageId")
+    )
+
+    evt = str(
+        data.get("event", "")
+    ).lower()
+
+    new = {
+        "delivered": "entregado",
+        "hard_bounce": "rebotado",
+        "soft_bounce": "error",
+        "invalid_email": "rebotado",
+        "blocked": "error",
+        "error": "error",
+        "spam": "error",
+        "deferred": "error"
+    }.get(evt)
+
+    if not msg_id or not new:
+        return {
+            "procesado": False
+        }
+
+    with engine.begin() as conn:
+
+        p = conn.execute(
+            select(
+                people.c.id,
+                people.c.email_estado
+            )
+            .where(
+                and_(
+                    people.c.evento_id == EVENT_ID,
+                    people.c.email_message_id == msg_id
+                )
+            )
+        ).first()
+
+        if not p:
+            return {
+                "procesado": False
+            }
+
+        if (
+            p.email_estado == "entregado"
+            and new != "rebotado"
+        ):
+            return {
+                "procesado": True
+            }
+
+        conn.execute(
+            update(people)
+            .where(people.c.id == p.id)
+            .values(
+                email_estado=new,
+                email_error=(
+                    ("Brevo reportó " + evt)
+                    if new in ("rebotado", "error")
+                    else None
+                )
+            )
+        )
+
+        conn.execute(
+            update(attempts)
+            .where(attempts.c.message_id == msg_id)
+            .values(estado=new)
+        )
+
+    return {
+        "procesado": True
+    }
+
+
+# ============================================================
+# WHATSAPP MANUAL
+# ============================================================
+
+@app.get("/api/whatsapp/{pid}")
+def whatsapp_manual(
+    pid: int,
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    with engine.connect() as c:
-        records=c.execute(select(people.c.cedula,people.c.nombre,people.c.email,people.c.telefono,people.c.asistio_en).where(people.c.evento_id==EVENT_ID)).all()
-    out=io.StringIO();w=csv.writer(out);w.writerow(['Identificacion','Nombre','Correo','Celular','Ingreso UTC'])
-    for r in records: w.writerow(r)
-    return Response('\ufeff'+out.getvalue(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename=asistencia_ups.csv','Cache-Control':'no-store'})
 
-class Scan(BaseModel):qr:str=Field(min_length=15,max_length=500)
-@app.post('/api/verificar')
-def verify(scan:Scan,x_admin_key:str|None=Header(None)):
+    p = get_person(pid)
+
+    phone = re.sub(
+        "[^0-9]",
+        "",
+        p["telefono"]
+    )
+
+    if not phone:
+        raise HTTPException(
+            400,
+            "No hay número de celular para este participante."
+        )
+
+    return {
+        "url": (
+            f"https://wa.me/{phone}?text="
+            + quote(
+                f"Hola {p['nombre']}, contactamos desde "
+                "la organización del evento UPS sobre "
+                "tu credencial QR. Por seguridad, "
+                "te la enviaremos por el canal de entrega autorizado."
+            )
+        ),
+        "nota": (
+            "Abre un chat manual. No envía automáticamente "
+            "el QR. Requiere consentimiento y número "
+            "con código de país."
+        )
+    }
+
+
+# ============================================================
+# EXPORTAR ASISTENCIA
+# ============================================================
+
+@app.get("/api/exportar-asistencia")
+def export_attendance(
+    x_admin_key: str | None = Header(None)
+):
+
     guard(x_admin_key)
-    parts=scan.qr.strip().split(':')
-    if len(parts)!=3 or parts[0]!='EVT1' or parts[1]!=EVENT_ID: raise HTTPException(400,'QR ajeno al evento o formato no reconocido')
-    token=parts[2]
-    if not 30<=len(token)<=100: raise HTTPException(400,'QR inválido')
-    digest=hashlib.sha256(token.encode()).hexdigest()
-    # UPDATE atómico: dos escáneres simultáneos no pueden registrar dos primeras entradas.
-    with engine.begin() as c:
-        ts=now()
-        res=c.execute(update(people).where(and_(people.c.evento_id==EVENT_ID,people.c.token_hash==digest,people.c.asistio_en.is_(None))).values(asistio_en=ts))
-        p=c.execute(select(people.c.nombre,people.c.cedula,people.c.asistio_en).where(and_(people.c.evento_id==EVENT_ID,people.c.token_hash==digest))).first()
-        if not p: raise HTTPException(404,'QR no registrado en la lista oficial importada')
-        valid=res.rowcount==1
-    return {'estado':'valido' if valid else 'duplicado','nombre':p.nombre,'cedula':p.cedula,'asistio_en':p.asistio_en,'mensaje':'Asistencia registrada' if valid else 'Esta persona ya ingresó previamente'}
 
-@app.get('/healthz')
+    with engine.connect() as conn:
+
+        records = conn.execute(
+            select(
+                people.c.cedula,
+                people.c.nombre,
+                people.c.email,
+                people.c.email_institucional,
+                people.c.telefono,
+                people.c.asistio_en
+            )
+            .where(people.c.evento_id == EVENT_ID)
+        ).all()
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+
+    writer.writerow([
+        "Identificacion",
+        "Nombre",
+        "Correo personal",
+        "Correo institucional",
+        "Celular",
+        "Ingreso UTC"
+    ])
+
+    for record in records:
+        writer.writerow(record)
+
+    return Response(
+        "\ufeff" + out.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                "attachment; filename=asistencia_ups.csv",
+            "Cache-Control": "no-store"
+        }
+    )
+
+
+# ============================================================
+# VERIFICAR QR Y REGISTRAR INGRESO
+# ============================================================
+
+class Scan(BaseModel):
+    qr: str = Field(min_length=15, max_length=500)
+
+
+@app.post("/api/verificar")
+def verify(
+    scan: Scan,
+    x_admin_key: str | None = Header(None)
+):
+
+    guard(x_admin_key)
+
+    parts = scan.qr.strip().split(":")
+
+    if (
+        len(parts) != 3
+        or parts[0] != "EVT1"
+        or parts[1] != EVENT_ID
+    ):
+        raise HTTPException(
+            400,
+            "QR ajeno al evento o formato no reconocido"
+        )
+
+    token = parts[2]
+
+    if not 30 <= len(token) <= 100:
+        raise HTTPException(
+            400,
+            "QR inválido"
+        )
+
+    digest = hashlib.sha256(
+        token.encode()
+    ).hexdigest()
+
+    # UPDATE atómico: evita dos ingresos simultáneos.
+    with engine.begin() as conn:
+
+        ts = now()
+
+        res = conn.execute(
+            update(people)
+            .where(
+                and_(
+                    people.c.evento_id == EVENT_ID,
+                    people.c.token_hash == digest,
+                    people.c.asistio_en.is_(None)
+                )
+            )
+            .values(asistio_en=ts)
+        )
+
+        p = conn.execute(
+            select(
+                people.c.nombre,
+                people.c.cedula,
+                people.c.asistio_en
+            )
+            .where(
+                and_(
+                    people.c.evento_id == EVENT_ID,
+                    people.c.token_hash == digest
+                )
+            )
+        ).first()
+
+        if not p:
+            raise HTTPException(
+                404,
+                "QR no registrado en la lista oficial importada"
+            )
+
+        valid = res.rowcount == 1
+
+    return {
+        "estado": "valido" if valid else "duplicado",
+        "nombre": p.nombre,
+        "cedula": p.cedula,
+        "asistio_en": p.asistio_en,
+        "mensaje": (
+            "Asistencia registrada"
+            if valid
+            else "Esta persona ya ingresó previamente"
+        )
+    }
+
+
+# ============================================================
+# HEALTH CHECK
+# ============================================================
+
+@app.get("/healthz")
 def healthz():
-    with engine.connect() as c: c.execute(text('SELECT 1'))
-    return {'ok': True}
-@app.post('/api/validar-clave')
+
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+
+    return {
+        "ok": True
+    }
+
+
+# ============================================================
+# VALIDAR CLAVE DEL ORGANIZADOR
+# ============================================================
+
+@app.post("/api/validar-clave")
 def validar_clave_organizador(
     x_admin_key: str | None = Header(None)
 ):
-    guard(x_admin_key)
-    return {
-        'autorizado': True,
-        'mensaje': 'Clave del organizador verificada.'
-    }
-class Lookup(BaseModel):
-    cedula:str=Field(min_length=1,max_length=50)
 
-@app.post('/api/consultar')
-def lookup_person(body:Lookup,x_admin_key:str|None=Header(None)):
     guard(x_admin_key)
-    with engine.connect() as c:
-        p=c.execute(select(people.c.nombre,people.c.cedula,people.c.asistio_en).where(
-            and_(people.c.evento_id==EVENT_ID,people.c.cedula==body.cedula))).first()
-    if not p:raise HTTPException(404,'No consta en el listado importado')
+
+    return {
+        "autorizado": True,
+        "mensaje": "Clave del organizador verificada."
+    }
+
+
+# ============================================================
+# CONSULTAR PARTICIPANTE POR IDENTIFICACIÓN
+# ============================================================
+
+class Lookup(BaseModel):
+    cedula: str = Field(min_length=1, max_length=50)
+
+
+@app.post("/api/consultar")
+def lookup_person(
+    body: Lookup,
+    x_admin_key: str | None = Header(None)
+):
+
+    guard(x_admin_key)
+
+    with engine.connect() as conn:
+
+        p = conn.execute(
+            select(
+                people.c.nombre,
+                people.c.cedula,
+                people.c.asistio_en
+            )
+            .where(
+                and_(
+                    people.c.evento_id == EVENT_ID,
+                    people.c.cedula == body.cedula
+                )
+            )
+        ).first()
+
+    if not p:
+        raise HTTPException(
+            404,
+            "No consta en el listado importado"
+        )
+
     return asrow(p)
 
 
 # ============================================================
-# REGISTRO RÁPIDO: formulario público complementario del evento
+# REGISTRO RÁPIDO
 # ============================================================
 
 class RegistroRapido(BaseModel):
+
     nombres: str = Field(min_length=2, max_length=100)
     apellidos: str = Field(min_length=2, max_length=100)
     cedula: str = Field(min_length=5, max_length=50)
     correo: str = Field(min_length=6, max_length=255)
+
     consentimiento: bool
-    captcha: str = Field(min_length=1, max_length=2048)
-    sitio_web: str = Field(default="", max_length=200)
+
+    captcha: str = Field(
+        min_length=1,
+        max_length=2048
+    )
+
+    sitio_web: str = Field(
+        default="",
+        max_length=200
+    )
 
 
 def registro_habilitado():
-    return os.getenv("REGISTRO_PUBLICO_ACTIVO", "false").lower() == "true"
+    return (
+        os.getenv(
+            "REGISTRO_PUBLICO_ACTIVO",
+            "false"
+        ).lower() == "true"
+    )
 
 
 def url_publica():
@@ -454,32 +1543,56 @@ def url_publica():
 
 @app.get("/registro", response_class=HTMLResponse)
 def pagina_registro():
-    if not registro_habilitado():
-        raise HTTPException(503, "Registro rápido cerrado o no activado.")
 
-    site_key = os.getenv("TURNSTILE_SITE_KEY", "")
+    if not registro_habilitado():
+        raise HTTPException(
+            503,
+            "Registro rápido cerrado o no activado."
+        )
+
+    site_key = os.getenv(
+        "TURNSTILE_SITE_KEY",
+        ""
+    )
+
     if not site_key:
-        raise HTTPException(503, "Falta TURNSTILE_SITE_KEY en Render.")
+        raise HTTPException(
+            503,
+            "Falta TURNSTILE_SITE_KEY en Render."
+        )
 
     ruta = ROOT / "static" / "registro.html"
-    pagina = ruta.read_text(encoding="utf-8")
+
+    pagina = ruta.read_text(
+        encoding="utf-8"
+    )
+
     pagina = pagina.replace(
         "__TURNSTILE_SITE_KEY__",
         html.escape(site_key, quote=True)
     )
+
     return HTMLResponse(
         content=pagina,
-        headers={"Cache-Control": "no-store"}
+        headers={
+            "Cache-Control": "no-store"
+        }
     )
 
 
 @app.get("/registro/qr")
 def descargar_qr_registro():
+
     if not registro_habilitado():
-        raise HTTPException(503, "Registro rápido cerrado.")
+        raise HTTPException(
+            503,
+            "Registro rápido cerrado."
+        )
 
     enlace = f"{url_publica()}/registro"
+
     imagen = qrcode.make(enlace)
+
     salida = io.BytesIO()
     imagen.save(salida, format="PNG")
     salida.seek(0)
@@ -489,18 +1602,29 @@ def descargar_qr_registro():
         media_type="image/png",
         headers={
             "Cache-Control": "no-store",
-            "Content-Disposition": 'inline; filename="qr_registro_ups.png"'
+            "Content-Disposition":
+                'inline; filename="qr_registro_ups.png"'
         }
     )
 
 
 async def verificar_turnstile(token: str):
-    secreto = os.getenv("TURNSTILE_SECRET_KEY", "")
+
+    secreto = os.getenv(
+        "TURNSTILE_SECRET_KEY",
+        ""
+    )
+
     if not secreto:
-        raise HTTPException(503, "Falta configurar TURNSTILE_SECRET_KEY.")
+        raise HTTPException(
+            503,
+            "Falta configurar TURNSTILE_SECRET_KEY."
+        )
 
     try:
+
         async with httpx.AsyncClient(timeout=10) as cliente:
+
             respuesta = await cliente.post(
                 "https://challenges.cloudflare.com/turnstile/v0/siteverify",
                 data={
@@ -508,17 +1632,27 @@ async def verificar_turnstile(token: str):
                     "response": token
                 }
             )
+
             respuesta.raise_for_status()
             resultado = respuesta.json()
+
     except (httpx.HTTPError, ValueError):
-        raise HTTPException(503, "No se pudo verificar el CAPTCHA.")
+
+        raise HTTPException(
+            503,
+            "No se pudo verificar el CAPTCHA."
+        )
 
     dominio = urlparse(url_publica()).hostname
+
     if (
         not resultado.get("success")
         or resultado.get("hostname") != dominio
     ):
-        raise HTTPException(400, "Verificación de seguridad inválida.")
+        raise HTTPException(
+            400,
+            "Verificación de seguridad inválida."
+        )
 
 
 @app.post("/api/registro-rapido", status_code=201)
@@ -526,46 +1660,80 @@ async def nuevo_registro(
     datos: RegistroRapido,
     background_tasks: BackgroundTasks
 ):
+
     if not registro_habilitado():
-        raise HTTPException(403, "Registro cerrado.")
+        raise HTTPException(
+            403,
+            "Registro cerrado."
+        )
 
     if datos.sitio_web:
-        raise HTTPException(400, "Solicitud inválida.")
+        raise HTTPException(
+            400,
+            "Solicitud inválida."
+        )
 
     if not datos.consentimiento:
-        raise HTTPException(400, "Debes aceptar el aviso de privacidad.")
+        raise HTTPException(
+            400,
+            "Debes aceptar el aviso de privacidad."
+        )
 
     nombres = " ".join(datos.nombres.split())
     apellidos = " ".join(datos.apellidos.split())
+
     cedula = datos.cedula.strip().upper()
     correo = datos.correo.strip().lower()
 
     if len(nombres) < 2 or len(apellidos) < 2:
-        raise HTTPException(400, "Nombres y apellidos incompletos.")
-
-    if not cedula_ec_valida(cedula): 
         raise HTTPException(
-        status_code=400,
-        detail=(
-            "La cédula ecuatoriana no es válida. "
-            "Debe contener exactamente 10 números "
-            "y cumplir el dígito verificador."
+            400,
+            "Nombres y apellidos incompletos."
         )
-    )
 
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", correo):
-        raise HTTPException(400, "Correo inválido.")
+    # El registro rápido conserva la validación estricta
+    # de cédula ecuatoriana.
+    if not cedula_ec_valida(cedula):
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "La cédula ecuatoriana no es válida. "
+                "Debe contener exactamente 10 números "
+                "y cumplir el dígito verificador."
+            )
+        )
+
+    if not re.fullmatch(
+        r"[^\s@]+@[^\s@]+\.[^\s@]+",
+        correo
+    ):
+        raise HTTPException(
+            400,
+            "Correo inválido."
+        )
 
     await verificar_turnstile(datos.captcha)
 
     if not mail_configured():
-        raise HTTPException(503, "El envío de QR no está configurado.")
+        raise HTTPException(
+            503,
+            "El envío de QR no está configurado."
+        )
 
-    maximo = int(os.getenv("MAX_PARTICIPANTES_EVENTO", "2000"))
+    maximo = int(
+        os.getenv(
+            "MAX_PARTICIPANTES_EVENTO",
+            "2000"
+        )
+    )
+
     token = secrets.token_urlsafe(32)
 
     try:
+
         with engine.begin() as conn:
+
             total = conn.execute(
                 select(func.count())
                 .select_from(people)
@@ -573,7 +1741,10 @@ async def nuevo_registro(
             ).scalar_one()
 
             if total >= maximo:
-                raise HTTPException(409, "Cupos agotados.")
+                raise HTTPException(
+                    409,
+                    "Cupos agotados."
+                )
 
             registro = conn.execute(
                 insert(people).values(
@@ -581,6 +1752,7 @@ async def nuevo_registro(
                     cedula=cedula,
                     nombre=f"{nombres} {apellidos}",
                     email=correo,
+                    email_institucional="",
                     telefono="",
                     tipo="Registro rápido",
                     token_hash=hashlib.sha256(
@@ -592,21 +1764,28 @@ async def nuevo_registro(
                     email_intentos=0
                 )
             )
-            participante_id = registro.inserted_primary_key[0]
+
+            participante_id = (
+                registro.inserted_primary_key[0]
+            )
 
     except IntegrityError:
-        # No revela datos personales de la inscripción existente.
+
         raise HTTPException(
             409,
             "Esta identificación ya está inscrita. "
             "Solicita ayuda a la organización si necesitas tu QR."
         )
 
-    # Se registra primero en PostgreSQL. Después se reserva un
-    # intento de correo, reutilizando el sistema Brevo existente.
+    # Primero se guarda el registro en PostgreSQL.
+    # Después se reserva el envío de su credencial.
     puede_enviar, motivo = claim_mail(participante_id)
+
     if puede_enviar:
-        background_tasks.add_task(send_brevo, participante_id)
+        background_tasks.add_task(
+            send_brevo,
+            participante_id
+        )
 
     return {
         "registrado": True,
@@ -616,15 +1795,15 @@ async def nuevo_registro(
             "revisa tu correo y spam."
             if puede_enviar
             else
-            "Inscripción guardada. La credencial está pendiente de envío; "
-            "contacta con la organización si no la recibes."
+            "Inscripción guardada. La credencial está pendiente "
+            "de envío; contacta con la organización si no la recibes."
         )
     }
 
 
-# ==========================================
-# REPORTES DIARIOS Y EXPORTACION A EXCEL
-# ==========================================
+# ============================================================
+# REPORTES DIARIOS
+# ============================================================
 
 instalar_reportes(
     app=app,
@@ -635,7 +1814,11 @@ instalar_reportes(
     guard=guard
 )
 
+
+# ============================================================
 # HISTORIAL E IMPORTACIONES INCREMENTALES
+# ============================================================
+
 instalar_importaciones(
     app=app,
     engine=engine,
