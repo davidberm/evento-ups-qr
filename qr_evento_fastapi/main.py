@@ -405,7 +405,15 @@ def verify(scan:Scan,x_admin_key:str|None=Header(None)):
 def healthz():
     with engine.connect() as c: c.execute(text('SELECT 1'))
     return {'ok': True}
-
+@app.post('/api/validar-clave')
+def validar_clave_organizador(
+    x_admin_key: str | None = Header(None)
+):
+    guard(x_admin_key)
+    return {
+        'autorizado': True,
+        'mensaje': 'Clave del organizador verificada.'
+    }
 class Lookup(BaseModel):
     cedula:str=Field(min_length=1,max_length=50)
 
