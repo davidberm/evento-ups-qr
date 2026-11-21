@@ -540,12 +540,12 @@ footer {
             </p>
 
             <label for="archivo">
-                Seleccionar Excel o CSV
+                 Seleccionar Excel XLS, XLSX o CSV
             </label>
 
             <input type="file"
-                   id="archivo"
-                   accept=".xlsx,.csv">
+       id="archivo"
+       accept=".xlsx,.xls,.csv">
 
             <button type="button" id="importar">
                 Analizar archivo (sin importar)
@@ -1002,6 +1002,7 @@ function mostrarParticipantes(datos) {
 
         dato("Identificación", persona.cedula);
         dato("Correo", persona.email);
+        dato("Correo institucional", persona.email_institucional);
         dato("Tipo", persona.tipo);
         dato("Estado del correo", persona.email_estado);
 
